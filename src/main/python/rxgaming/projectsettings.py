@@ -1,5 +1,4 @@
 import fiona
-from fiona.transform import transform_geom
 import shapely.geometry
 import shapely.ops
 import shapely.wkt
@@ -8,9 +7,7 @@ import numpy as np
 import os
 import copy
 
-import raster as raster
-import osgeo.osr as osr
-from osgeo import gdal
+import raster
 import ctypes
 from datetime import datetime
 import traceback
@@ -68,12 +65,10 @@ class ProjectSettings:
 class ProjectArea:
     def __init__(self, prj_poly_path, unit_poly_path, lidar_data_path, unit_name, allometry_coefficients, dll_path):
         with fiona.open(prj_poly_path, 'r') as shp:
-            self._prj_osr = osr.SpatialReference()
-            self._prj_osr.ImportFromWkt(shp.meta['crs_wkt'])
+            self._prj_wkt = shp.meta['crs_wkt']
             self._prj_poly = list(shp)
         with fiona.open(unit_poly_path, 'r') as shp:
-            self._unit_osr = osr.SpatialReference()
-            self._unit_osr.ImportFromWkt(shp.meta['crs_wkt'])
+            self._unit_wkt = shp.meta['crs_wkt']
             self._unit_poly = list(shp)
 
         self._tao_data = LidarDataset(lidar_data_path, dll_path)
@@ -81,14 +76,14 @@ class ProjectArea:
 
         shp = [shapely.geometry.shape(feature['geometry']).buffer(0) for feature in self._unit_poly
                if feature['geometry'] is not None]
-        shp = [self._tao_data.reprojectPolygon(s, self._unit_osr) for s in shp]
-        self._unit_osr = self._tao_data.get_osr()
+        shp = [self._tao_data.reprojectPolygon(s, self._unit_wkt) for s in shp]
+        self._unit_wkt = self._tao_data.get_wkt()
 
         prj = shapely.ops.unary_union([shapely.geometry.shape(feature['geometry']) for feature in self._prj_poly
                                        if feature['geometry'] is not None]).buffer(0)
         prj = prj.convex_hull
-        prj = self._tao_data.reprojectPolygon(prj, self._prj_osr)
-        self._prj_osr = self._tao_data.get_osr()
+        prj = self._tao_data.reprojectPolygon(prj, self._prj_wkt)
+        self._prj_wkt = self._tao_data.get_wkt()
 
         if not self.validate_prj_poly(prj) or not self.validate_unit_poly(prj, shp):
             raise ValueError("Invalid unit or project polygon")
@@ -102,29 +97,12 @@ class ProjectArea:
 
         units = [unit.intersection(prj) for unit in shp]
         names = [unit['properties'][unit_name] if unit_name in unit['properties'] else None for unit in self._unit_poly]
-        self._units = [RxUnit(unit, self._unit_osr, self._tao_data, name) for unit, name in zip(units, names) if unit.area != 0]
+        self._units = [RxUnit(unit, self._unit_wkt, self._tao_data, name) for unit, name in zip(units, names) if unit.area != 0]
 
     def prepToPickle(self):
-        self._unit_osr = self._unit_osr.ExportToWkt()
-        self._prj_osr = self._prj_osr.ExportToWkt()
-
-        for rx in self._units:
-            rx._unit_osr = rx._unit_osr.ExportToWkt()
-
         self._tao_data.prepToPickle()
 
     def dePickle(self, dll_path):
-        tmp = osr.SpatialReference()
-        tmp.ImportFromWkt(self._unit_osr)
-        self._unit_osr = tmp
-
-        tmp.ImportFromWkt(self._prj_osr)
-        self._prj_osr = tmp
-
-        for rx in self._units:
-            tmp.ImportFromWkt(rx._unit_osr)
-            rx._unit_osr = tmp
-
         self._tao_data.dePickle(dll_path)
 
     def add_unit(self, new_rxunit):
@@ -194,13 +172,13 @@ class ProjectArea:
 
 # TODO Let unit_poly be a path to a poly or a shapely shape
 class RxUnit:
-    def __init__(self, unit_poly, unit_osr, tao_data, name=None):
+    def __init__(self, unit_poly, unit_wkt, tao_data, name=None):
         print("Name: " + str(name) + " " + str(datetime.now()))
         self._unit_poly = self._validate_polygon(unit_poly)
-        self._unit_osr = unit_osr
+        self._unit_wkt = unit_wkt
         self._tao_data = tao_data
         print(1)
-        self._tao_data.loadRx(unit_poly, unit_osr)
+        self._tao_data.loadRx(unit_poly, unit_wkt)
         print(2)
         self._tao_points = self._tao_data.get_tao_points_dll()
         print(3)
@@ -332,8 +310,8 @@ class RxUnit:
     def get_tao_data(self):
         return self._tao_data
 
-    def get_osr(self):
-        return self._tao_data.get_osr()
+    def get_wkt(self):
+        return self._tao_data.get_wkt()
 
     def get_clump_sizes(self):
         return self._clump_sizes
@@ -346,7 +324,7 @@ class RxUnit:
 
     def _calculate_hillshade(self, grid, dx=None, az=315, elev=45):
         if dx is None:
-            dx = grid.res
+            dx = grid.res[0]
 
         az_rad, elev_rad = (360 - az + 90) * np.pi / 180, (90 - elev) * np.pi / 180
         sx, sy = self._calculate_slope(grid, dx)
@@ -447,7 +425,7 @@ class RxUnit:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
         return rout
 
     def get_current_structure_dll(self):
@@ -554,7 +532,7 @@ class RxUnit:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
         return rout
 
     def get_treat_chm_dll(self):
@@ -582,7 +560,7 @@ class RxUnit:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         r = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                          dataType=gdal.GDT_Float64)
+                          dataType=np.float64)
         return r
 
     def get_treat_structure_dll(self):
@@ -650,7 +628,7 @@ class RxUnit:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
         return rout
 
     def _calculate_treatment_dbh_thin(self, dbh_cutoff, **kwargs):
@@ -699,7 +677,7 @@ class LidarDataset:
         self._segments_path = None
         self._chm_path = None
         self._allometry = None
-        self._osr = None
+        self._wkt = None
         self.dll = None
 
         self.set_root_path(lidar_data_path)
@@ -764,8 +742,8 @@ class LidarDataset:
         self.dll.setProjDataDirectory.restype = None
         self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
         #b_dll_path = os.path.dirname(self._dll_path).encode('utf-8')
-        b_dll_path = ("C:/OSGeo4W64/share/proj").encode('utf-8')
-        #self.dll.setProjDataDirectory(b_dll_path)
+        b_dll_path = ("E:/Dropbox/Licosim/cpprastertools/pkgs/share/proj").encode('utf-8')
+        self.dll.setProjDataDirectory(b_dll_path)
 
         b_root_path = self._root_path.encode('utf-8')
         self.dll.initLidarDataset.argtypes = [ctypes.c_char_p]
@@ -801,7 +779,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         out.bigmhm = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
 
         self.dll.getBigChmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
                                         ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
@@ -827,7 +805,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         out.bigchm = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                                   dataType=gdal.GDT_Float64)
+                                   dataType=np.float64)
 
         self.dll.getBigBasinMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
@@ -853,7 +831,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         out.bigbasin = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
 
         self.dll.getMaskMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
                                              ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
@@ -879,7 +857,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         out.mask = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                                     dataType=gdal.GDT_Float64)
+                                     dataType=np.float64)
 
         self.dll.nBigTaos.argtypes = []
         self.dll.nBigTaos.restype = int
@@ -898,7 +876,6 @@ class LidarDataset:
         out.convFactor = convFactor.value
 
         self.dll = out
-        self._osr = self._osr.ExportToWkt()
 
     def dePickle(self, dll_path):
         if isinstance(self.dll, DllStorage):
@@ -962,25 +939,21 @@ class LidarDataset:
 
             self.set_allometry(self._allometry)
 
-            tmp = osr.SpatialReference()
-            tmp.ImportFromWkt(self._osr)
-            self._osr = tmp
-
     def doPreProcessing(self, projPoly):
         self.dll.doPreProcessing.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
         self.dll.doPreProcessing.restype = None
-        crsWkt = self._osr.ExportToWkt()
+        crsWkt = self._wkt
         print("dopreprocessing")
         wkt = shapely.wkt.dumps(projPoly)
         crsWkt = crsWkt.encode('utf-8')
         wkt = wkt.encode('utf-8')
         self.dll.doPreProcessing(wkt, crsWkt, 1)
 
-    def reprojectPolygon(self, poly, osr):
+    def reprojectPolygon(self, poly, crsWkt):
         self.dll.reprojectPolygon.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
         self.dll.reprojectPolygon.restype = None
 
-        crsWkt = osr.ExportToWkt().encode('utf-8')
+        crsWkt = crsWkt.encode('utf-8')
         wkt = shapely.wkt.dumps(poly).encode('utf-8')
 
         outWkt = ctypes.create_string_buffer(2147483647)
@@ -990,10 +963,10 @@ class LidarDataset:
         return shapely.wkt.loads(outWkt)
 
 
-    def loadRx(self, poly, osr):
+    def loadRx(self, poly, wkt):
         self.dll.loadRx.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
         self.dll.loadRx.restype = None
-        crsWkt = osr.ExportToWkt()
+        crsWkt = wkt
         wkt = shapely.wkt.dumps(poly)
         crsWkt = crsWkt.encode('utf-8')
         wkt = wkt.encode('utf-8')
@@ -1046,12 +1019,11 @@ class LidarDataset:
 
     def set_layout_poly(self, path):
         with fiona.open(path, 'r') as shp:
-            self._osr = osr.SpatialReference()
-            self._osr.ImportFromWkt(shp.meta['crs_wkt'])
+            self._wkt = shp.meta['crs_wkt']
             self._layout_poly = list(shp)
 
-    def get_osr(self):
-        return self._osr
+    def get_wkt(self):
+        return self._wkt
 
     def get_dbh_from_height_dll(self, height):
         self.dll.getDbhFromHeight.argtypes = [np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
@@ -1067,7 +1039,7 @@ class LidarDataset:
     def set_allometry(self, a):
         self.dll.setAllometry.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double]
 
-        if isinstance(a, rxgaming.projectsettings.Allometry):
+        if isinstance(a, Allometry):
             self._allometry = a
             print(str(a.intercept) + " " + str(a.slope) + " " + str(a.transform) + " " + str(a.backtransform))
             self.dll.setAllometry(ctypes.c_double(a.intercept), ctypes.c_double(a.slope),
@@ -1085,7 +1057,7 @@ class LidarDataset:
 
             self.dll.setAllometryWkt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
             self.dll.setAllometryWkt.restype = None
-            crsWkt = self._osr.ExportToWkt()
+            crsWkt = self.get_wkt()
             wkt = shapely.wkt.dumps(a)
             crsWkt = crsWkt.encode('utf-8')
             wkt = wkt.encode('utf-8')
@@ -1133,7 +1105,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
         return rout
 
     def get_basin_map_dll(self):
@@ -1160,7 +1132,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=gdal.GDT_Float64)
+                             dataType=np.float64)
         return rout
 
     def get_canopy_model_dll(self):
@@ -1188,7 +1160,7 @@ class LidarDataset:
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         r = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                          dataType=gdal.GDT_Float64)
+                          dataType=np.float64)
         return r
 
     def get_tao_points_dll(self):
@@ -1272,6 +1244,7 @@ class StructureSummary:
     @property
     def cc(self):
         return self._data[4]
+
 
 class DllStorage:
     def __init__(self):

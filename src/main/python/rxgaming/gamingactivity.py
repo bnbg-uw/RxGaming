@@ -11,17 +11,20 @@ from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
 from scipy.spatial import ConvexHull
 from scipy.stats import gaussian_kde
 from activity import Activity, SaveStateActivity
+from projectsettings import DllStorage
 from shapely.geometry import mapping, Point, Polygon as ShpPolygon
+import raster
 import fiona
 import fiona.crs
+import rasterio
 import csv
 import descartes
-from osgeo import gdal
+
 import os
 from QtWidgets import QWaitingIndicator, pyqtWorkerthread, SliderWithValue, QMainWindowRx
 import tempfile
 import pickle
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 
 # GamingActivity class
 # Handles user input and interactions with the projectsettings and surfaces data and treatment results
@@ -87,7 +90,7 @@ class GamingActivity(Activity):
         if "Autosave_path" in saved_state:
             if saved_state['Autosave_path'] is not None:
                 SaveStateActivity.write_file(file_path=self.saved_state['Autosave_path'], saved_state=self.save())
-                self.tab_widget.project_settings.prj_area.dePickle(dll_path)
+                self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
 
     # Implement the method called when the activity closes.
     def save(self):
@@ -444,7 +447,7 @@ class Tabs(QTabWidget):
         # Get ref data ready
         # This could be a record array instead of individual arrays??
         self.project_settings = saved_state["ProjectSettings"]
-        if(type(self.project_settings.prj_area._unit_osr) is str):
+        if(type(self.project_settings.prj_area._tao_data.dll) is DllStorage):
             self.project_settings.prj_area.dePickle(dll_path)
 
         ref_db = self.project_settings.get_reference_data()
@@ -484,6 +487,7 @@ class Tabs(QTabWidget):
         ref_ba_chull = ConvexHull(ref_ba_data)
         ref_ba_shp_poly = ShpPolygon(list(zip(ref_ba_data[ref_ba_chull.vertices, 0],
                                               ref_ba_data[ref_ba_chull.vertices, 1])))
+        print(ref_ba_shp_poly)
         self.ref_ba_polygon = descartes.PolygonPatch(ref_ba_shp_poly)
         self.current_ba_ax.add_patch(self.ref_ba_polygon)
         self.ref_ba_polygon.set_visible(True)
@@ -812,7 +816,10 @@ class Tabs(QTabWidget):
 
         self.raster_ax.cla()
         if self.raster_cb:
-            self.raster_cb.remove()
+            try:
+                self.raster_cb.remove()
+            except KeyError:
+                pass
         if viewmode == 0:
             img = self.raster_ax.imshow(self.treatment.chm.values, cmap='coolwarm', vmin=0)
             self.raster_ax.imshow(self.treatment.hill, cmap='Greys', alpha=0.5)
@@ -846,14 +853,14 @@ class Tabs(QTabWidget):
         self.raster_ax.set_xlim(-0.5 - xrange * 0.05, xrange + xrange * 0.05)
         self.raster_ax.set_ylim(yrange + yrange * 0.05, -0.5 - yrange * 0.05)
         if 'f' in unit.get_units():
-            if xrange * self.treatment.chm.res > 10000 or yrange * self.treatment.chm.res > 10000:
+            if xrange * self.treatment.chm.xres > 10000 or yrange * self.treatment.chm.yres > 10000:
                 factor = 1 / 5280
                 label = 'miles'
             else:
                 factor = 1
                 label = 'feet'
         else:
-            if xrange * self.treatment.chm.res > 3048 or yrange * self.treatment.chm.res > 3048:
+            if xrange * self.treatment.chm.xres > 3048 or yrange * self.treatment.chm.yres > 3048:
                 factor = 1 / 1609.34
                 label = 'miles'
             else:
@@ -868,8 +875,8 @@ class Tabs(QTabWidget):
             self.project_settings.get_name() + ', ' + str(unit.get_name()) + ' ' + str(self.raster_viewmode.currentText()))
         self.raster_canvas.draw_idle()
 
-        self.raster_ax.get_xaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: round(x * self.treatment.chm.res * factor)))
-        self.raster_ax.get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: round(x * self.treatment.chm.res * factor)))
+        self.raster_ax.get_xaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: round(x * self.treatment.chm.xres * factor)))
+        self.raster_ax.get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: round(x * self.treatment.chm.xres * factor)))
 
         for tick in self.raster_ax.get_xticklabels():
             tick.set_rotation(45)
@@ -1169,54 +1176,54 @@ class Tabs(QTabWidget):
             row = self.stand_tab_list_view.currentIndex().row()
             unit = self.rx_units[row]
             filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
-            with tempfile.TemporaryDirectory() as dirpath:
-                self.raster_figure.savefig(dirpath + "/tmp.png", dpi=300)
+            self.raster_figure.savefig(filename, dpi=300)
 
-                img = PIL.Image.open(dirpath + "/tmp.png")
-                i = PIL.ImageDraw.Draw(img)
-                f = PIL.ImageFont.truetype("arial.ttf", 70)
-                i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
-                if unit.get_treat_structure() is not None:
-                    i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
-                else:
-                    i.text((100, 800), "-", font=f, fill=(0, 0, 0))
-                i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
-                img.save(dirpath + "/tmp.png")
+            img = PIL.Image.open(filename)
+            i = PIL.ImageDraw.Draw(img)
+            f = PIL.ImageFont.truetype("arial.ttf", 70)
+            i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
+            if unit.get_treat_structure() is not None:
+                i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
+            else:
+                i.text((100, 800), "-", font=f, fill=(0, 0, 0))
+            i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
+            img.save("valid.tif")
 
-                fig_dpi = self.raster_figure.dpi
-                # Corners array:
-                #   [[left, bottom]
-                #    [right, top]]
-                corners = self.raster_ax.bbox.get_points() * 300 / fig_dpi
+            fig_dpi = self.raster_figure.dpi
+            # Corners array:
+            #   [[left, bottom]
+            #    [right, top]]
+            corners = self.raster_ax.bbox.get_points() * 300 / fig_dpi
 
-                r = self.get_current_unit().get_chm()
-                proj = r.projection
+            r = self.get_current_unit().get_chm()
+            proj = r.projection
 
-                e = r.extent
-                xrange = e.xmax - e.xmin
-                yrange = e.ymax - e.ymin
+            e = r.extent
+            xrange = e.xmax - e.xmin
+            yrange = e.ymax - e.ymin
 
-                e.xmax = e.xmax + xrange * 0.05
-                e.xmin = e.xmin - xrange * 0.05
-                e.ymin = e.ymin - yrange * 0.05
-                e.ymax = e.ymax + yrange * 0.05
+            e.xmax = e.xmax + xrange * 0.05
+            e.xmin = e.xmin - xrange * 0.05
+            e.ymin = e.ymin - yrange * 0.05
+            e.ymax = e.ymax + yrange * 0.05
 
-                xres = (e.xmax - e.xmin) / (corners[1, 0] - corners[0, 0])  # Positive  value, left side = 0
-                yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])  # Negative value, top = 0
+            xres = (e.xmax - e.xmin) / (corners[1, 0] - corners[0, 0])  # Positive  value, left side = 0
+            yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])  # Negative value, top = 0
 
-                _, height = self.raster_canvas.get_width_height()
-                height *= 300 / fig_dpi
-                xmin = e.xmin - corners[0, 0] * xres
-                ymax = e.ymax - (height - corners[1, 1]) * yres
-                geo_xform = (xmin, xres, 0, ymax, 0, yres)
+            width, height = self.raster_canvas.get_width_height()
+            height *= 300 / fig_dpi
+            xmin = e.xmin - corners[0, 0] * xres
+            ymax = e.ymax - (height - corners[1, 1]) * yres
+            transform = rasterio.Affine(xres, 0, xmin, 0, -yres, ymax)
 
-                ds = gdal.Open(dirpath + "/tmp.png")
-                ds.SetProjection(proj)
-                ds.SetGeoTransform(geo_xform)
-                out_ds = gdal.GetDriverByName('GTiff').CreateCopy(filename, ds)
-                # required for closing the connection in the gdal docs
-                ds = None
-                out_ds = None
+            with rasterio.open(filename) as ds:
+                data = ds.read(1)
+                ht = ds.height
+                wd = ds.width
+                ext = raster.Extent(xmin, xmin+wd*xres, ymax-ht*yres, ymax)
+                r = raster.Raster(ext, [xres,yres], proj, data, ds.dtypes[0])
+                r.writeRaster(filename)
+
 
         elif self.page_counter == 1:
             filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
@@ -1274,9 +1281,8 @@ class Tabs(QTabWidget):
                            }
         }
 
-        osr = unit.get_osr()
-        proj = osr.ExportToProj4()
-        crs = fiona.crs.from_string(proj)
+        wkt = unit.get_wkt()
+        crs = fiona.crs.from_wkt(wkt)
 
         with fiona.open(filename, 'w', crs=crs, driver='ESRI Shapefile', schema=schema) as c:
             for i, pt in enumerate(pts):
