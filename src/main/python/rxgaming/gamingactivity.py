@@ -64,7 +64,7 @@ class GamingActivity(Activity):
         self.export_tif_action = QAction("&Export window- geotiff (\".tif\")")
         self.export_tif_action.triggered.connect(self.export_tif)
 
-        self.export_rasters_action = QAction("&Export raster data (\".img\")")
+        self.export_rasters_action = QAction("&Export raster data (\".tif\")")
         self.export_rasters_action.triggered.connect(self.export_rasters)
 
         self.export_features_action = QAction("&Export shapefile data (\".shp\")")
@@ -112,6 +112,7 @@ class GamingActivity(Activity):
     # action for a user instantiated save.
     def menu_save(self):
         if 'save_file_location' in self.saved_state:
+            print(self.saved_state['save_file_location'])
             if os.path.isfile(self.saved_state['save_file_location']):
                 with open(self.saved_state['save_file_location'], 'wb') as fp:
                     pickle.dump(self.save(), fp)
@@ -448,6 +449,7 @@ class Tabs(QTabWidget):
         # This could be a record array instead of individual arrays??
         self.project_settings = saved_state["ProjectSettings"]
         if(type(self.project_settings.prj_area._tao_data.dll) is DllStorage):
+            print("depickling")
             self.project_settings.prj_area.dePickle(dll_path)
 
         ref_db = self.project_settings.get_reference_data()
@@ -781,17 +783,10 @@ class Tabs(QTabWidget):
             if method == "DBH Thin":
                 method = "dbh_thin"
 
-            # Attempting to multithread the processing here.
-            self.raster_canvas.overlay = QWaitingIndicator(self.raster_canvas)
-            self.raster_canvas.overlay.setDisplayText("Processing treatment.")
-            self.raster_canvas.overlay.show()
-            t = self._do_get_treatment(unit, method, self.treatment, **kwargs)
-            t.wait()
-            self.raster_canvas.overlay.hide()
-            del t
+            self.treatment.chm, self.treatment.hill, self.treatment.tao_pts, self.treatment.basin, _ = unit.get_treatment(method, **kwargs)
 
             clumps = unit.get_treat_clump_map()
-            rem_pts = unit.get_treat_points()
+            rem_pts = self.treatment.tao_pts
             rem_pts = rem_pts[~np.logical_or(rem_pts[:, 0] < self.treatment.chm.xmin, rem_pts[:, 0] > self.treatment.chm.xmax), :]
             rem_pts = rem_pts[~np.logical_or(rem_pts[:, 1] < self.treatment.chm.ymin, rem_pts[:, 1] > self.treatment.chm.ymax), :]
 
@@ -814,12 +809,8 @@ class Tabs(QTabWidget):
             x = []
             y = []
 
-        self.raster_ax.cla()
-        if self.raster_cb:
-            try:
-                self.raster_cb.remove()
-            except KeyError:
-                pass
+        self.raster_figure.clf()
+        self.raster_ax = self.raster_figure.add_subplot(111)
         if viewmode == 0:
             img = self.raster_ax.imshow(self.treatment.chm.values, cmap='coolwarm', vmin=0)
             self.raster_ax.imshow(self.treatment.hill, cmap='Greys', alpha=0.5)
@@ -881,11 +872,6 @@ class Tabs(QTabWidget):
         for tick in self.raster_ax.get_xticklabels():
             tick.set_rotation(45)
         self.raster_canvas.draw_idle()
-
-    # In theory this does the treatment processing on a separate thread.
-    @pyqtWorkerthread()
-    def _do_get_treatment(self, unit, method, treatment, **kwargs):
-        treatment.chm, treatment.hill, treatment.tao_pts, treatment.basin, _ = unit.get_treatment(method, **kwargs)
 
     # Draw the page that gives info on the pre treat and post treat conditions.
     def _draw_report_page(self, unit):
@@ -1176,18 +1162,19 @@ class Tabs(QTabWidget):
             row = self.stand_tab_list_view.currentIndex().row()
             unit = self.rx_units[row]
             filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
-            self.raster_figure.savefig(filename, dpi=300)
-
-            img = PIL.Image.open(filename)
-            i = PIL.ImageDraw.Draw(img)
-            f = PIL.ImageFont.truetype("arial.ttf", 70)
-            i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
-            if unit.get_treat_structure() is not None:
-                i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
-            else:
-                i.text((100, 800), "-", font=f, fill=(0, 0, 0))
-            i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
-            img.save("valid.tif")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                self.raster_figure.savefig(tmpdir + "/tmp.tif", dpi=300)
+                img = PIL.Image.open(tmpdir + "/tmp.tif")
+                i = PIL.ImageDraw.Draw(img)
+                f = PIL.ImageFont.truetype("arial.ttf", 70)
+                i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
+                if unit.get_treat_structure() is not None:
+                    i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
+                else:
+                    i.text((100, 800), "-", font=f, fill=(0, 0, 0))
+                i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
+                img.save(filename)
+                img.close()
 
             fig_dpi = self.raster_figure.dpi
             # Corners array:
@@ -1208,22 +1195,21 @@ class Tabs(QTabWidget):
             e.ymax = e.ymax + yrange * 0.05
 
             xres = (e.xmax - e.xmin) / (corners[1, 0] - corners[0, 0])  # Positive  value, left side = 0
-            yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])  # Negative value, top = 0
+            yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])*-1  # Negative value, top = 0
 
             width, height = self.raster_canvas.get_width_height()
             height *= 300 / fig_dpi
             xmin = e.xmin - corners[0, 0] * xres
-            ymax = e.ymax - (height - corners[1, 1]) * yres
-            transform = rasterio.Affine(xres, 0, xmin, 0, -yres, ymax)
+            ymax = e.ymax + (height - corners[1, 1]) * yres
 
-            with rasterio.open(filename) as ds:
-                data = ds.read(1)
-                ht = ds.height
-                wd = ds.width
-                ext = raster.Extent(xmin, xmin+wd*xres, ymax-ht*yres, ymax)
-                r = raster.Raster(ext, [xres,yres], proj, data, ds.dtypes[0])
-                r.writeRaster(filename)
-
+            ds = rasterio.open(filename)
+            data = ds.read()
+            ht = ds.height
+            wd = ds.width
+            ext = raster.Extent(xmin, xmin+wd*xres, ymax-ht*yres, ymax)
+            r = raster.Raster(ext, (xres, yres), wd, ht, proj, data, ds.dtypes[0])
+            ds.close()
+            r.writeRaster(filename)
 
         elif self.page_counter == 1:
             filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
@@ -1239,9 +1225,9 @@ class Tabs(QTabWidget):
 
     # export the current raster depending on whether the treatment view is check or not.
     def export_raster(self):
-        filename = QFileDialog.getSaveFileName(self, "Enter a file name to export raster data to.", "", "'.img")[0]
-        if filename[len(filename) - 4:] != ".img":
-            filename = filename + ".img"
+        filename = QFileDialog.getSaveFileName(self, "Enter a file name to export raster data to.", "", "'tif")[0]
+        if filename[len(filename) - 4:] != ".tif":
+            filename = filename + ".tif"
         unit = self.get_current_unit()
         viewmode = self.raster_viewmode.currentIndex()
         if viewmode == 0:
@@ -1282,7 +1268,7 @@ class Tabs(QTabWidget):
         }
 
         wkt = unit.get_wkt()
-        crs = fiona.crs.from_wkt(wkt)
+        crs = fiona.crs.from_string(wkt)
 
         with fiona.open(filename, 'w', crs=crs, driver='ESRI Shapefile', schema=schema) as c:
             for i, pt in enumerate(pts):

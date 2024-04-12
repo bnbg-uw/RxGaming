@@ -324,7 +324,7 @@ class RxUnit:
 
     def _calculate_hillshade(self, grid, dx=None, az=315, elev=45):
         if dx is None:
-            dx = grid.res[0]
+            dx = grid.res
 
         az_rad, elev_rad = (360 - az + 90) * np.pi / 180, (90 - elev) * np.pi / 180
         sx, sy = self._calculate_slope(grid, dx)
@@ -498,7 +498,7 @@ class RxUnit:
         self._treat_best_struct = self.get_treated_structure_dll()
 
         self._treat_hill = copy.deepcopy(self._hillshade)
-        self._treat_hill[self._treat_basin == 1] = 200
+        self._treat_hill[self._treat_basin.values == 1] = 200
 
         self._treat_clump_sizes = self.get_treat_raw_clumps_dll()
         self._treat_clump_map = self.get_treat_clump_map_dll(self._treat_clump_sizes)
@@ -876,6 +876,7 @@ class LidarDataset:
         out.convFactor = convFactor.value
 
         self.dll = out
+        print("prepped to pickle")
 
     def dePickle(self, dll_path):
         if isinstance(self.dll, DllStorage):
@@ -884,6 +885,12 @@ class LidarDataset:
             self._dll_path = dll_path
             self.dll.setSeed.restype = None
             self.dll.setSeed(1)
+
+            self.dll.setProjDataDirectory.restype = None
+            self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
+            # b_dll_path = os.path.dirname(self._dll_path).encode('utf-8')
+            b_dll_path = ("E:/Dropbox/Licosim/cpprastertools/pkgs/share/proj").encode('utf-8')
+            self.dll.setProjDataDirectory(b_dll_path)
 
             b_root_path = self._root_path.encode('utf-8')
             self.dll.initLidarDataset.argtypes = [ctypes.c_char_p]
@@ -938,6 +945,7 @@ class LidarDataset:
             self.dll.setBigTaos(tmp.bigtaos, tmp.bigtaos.size)
 
             self.set_allometry(self._allometry)
+            print("depickled")
 
     def doPreProcessing(self, projPoly):
         self.dll.doPreProcessing.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
