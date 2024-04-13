@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="871324ea-78ff-4d6b-9a72-e05cfd3e9945" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/adrg.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/adrg.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/avcexport.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/avcimport.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cairo.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/cairo.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cct.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/charset-1.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/charset-1.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cs2cs.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/curl-ca-bundle.crt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/curl-ca-bundle.crt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/curl.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/curse.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/derb.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/dllupdate.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/fax2ps.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/fax2tiff.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/fftw-wisdom.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/freexl.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/freexl.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal111.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal201.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal202.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal203.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal204.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal300.dll" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal_contour.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal_grid.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal_rasterize.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdal_translate.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdaladdo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalbuildvrt.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdaldem.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalenhance.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdallocationinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalmanage.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalserver.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalsrsinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdaltindex.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdaltransform.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gdalwarp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/genbrk.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/genccode.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gencfu.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gencmn.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gencnval.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gendict.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gennorm2.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/genrb.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gensprep.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geod.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geos.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/geos.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geos_c.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/geos_c.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geotifcp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gie.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gif2h5.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gnmanalyse.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gnmmanage.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gpsbabel.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gssetgs.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/gssetgs.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/gswin32c.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h52gif.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5clear.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5copy-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5copy.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5debug.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5diff-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5diff.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5dump-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5dump.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5format_convert.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5import.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5jam.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5ls-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5ls.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5mkgrp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5repack-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5repack.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5repart.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5stat-shared.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5stat.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5unjam.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/h5watch.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_cpp.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_cpp.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_hl.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_hl.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_hl_cpp.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_hl_cpp.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_tools.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/hdf5_tools.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/iconv-2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/iconv-2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icudt.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icudt.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icuin.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icuin.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icuinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icuio.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icuio.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icupkg.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icutest.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icutest.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icutu.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icutu.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/icuuc.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/icuuc.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/jq.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/las2las.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/las2ogr.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/las2txt.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/lasblock.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/lasinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libcrypto-1_1-x64.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libcrypto-1_1-x64.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libcurl.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libcurl.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/liblzma.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/liblzma.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libmysql.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libmysql.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libpng16.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libpng16.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libpq.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libpq.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libssl-1_1-x64.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libssl-1_1-x64.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libxml2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libxml2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/listgeo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/makeconv.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/mod_spatialite.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/mod_spatialite.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/nc-config.tmpl" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/nc-config.tmpl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/nccopy.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ncdump.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ncgen.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ncgen3.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/nearblack.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/netcdf.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/netcdf.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/nircmd.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/nircmdc.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ogdi.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ogdi.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ogr2ogr.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ogrinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ogrlineref.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ogrtindex.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/openjp2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/openjp2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/osgeo4w-setup.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/pal2rgb.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/pdal.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/pkgdata.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ppm2tiff.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/proj.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/proj.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/projinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf.cmd" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf.cmd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf12.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf12.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf12.cmd" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf12.cmd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf13.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf13.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf13.cmd" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf13.cmd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf14.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf14.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf14.cmd" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdf14.cmd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdfxx.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/ps2pdfxx.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/psql.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/python3.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/pythonw3.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin-g7.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin-g7.vars" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin-g7.vars" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin.vars" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/qgis-bin.vars" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/raw2tiff.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/remote.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/remote.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/rpf.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/rpf.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/setup-test.bat" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/setup-test.bat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/setup-test.bat.tmpl" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/setup-test.bat.tmpl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/skeleton.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/skeleton.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/spatialite.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/spatialite.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/sqlite3.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/sqlite3.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/sqlite3.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/szip.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/szip.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/testepsg.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/textreplace.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiff.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/tiff.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiff2bw.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiff2pdf.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiff2ps.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiff2rgba.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffcmp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffcp.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffcrop.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffdither.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffdump.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffinfo.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffmedian.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffset.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/tiffsplit.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/ts2las.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/txt2las.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/uconv.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/vcredist-2013-x64.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/vcredist_2015_x64.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/vrf.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/vrf.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/xerces-c_3_2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/xerces-c_3_2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/xmlcatalog.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/xmllint.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/xmlwf.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/xxmklink.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/zstd.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/zstd.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/zstd.exe" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 6
+}]]></component>
+  <component name="ProjectId" id="2eKoNMIpjduT0aSlxgowJxvz8cv" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-09665e90c3a7-d3b881c8e49f-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-233.15026.15" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="871324ea-78ff-4d6b-9a72-e05cfd3e9945" name="Changes" comment="" />
+      <created>1711662590223</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1711662590223</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
