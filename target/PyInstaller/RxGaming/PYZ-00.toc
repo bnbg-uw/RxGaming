@@ -1,1 +1,0 @@
-('F:\\RxGaming\\target\\PyInstaller\\RxGaming\\PYZ-00.pyz', [])
