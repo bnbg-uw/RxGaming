@@ -741,8 +741,7 @@ class LidarDataset:
 
         self.dll.setProjDataDirectory.restype = None
         self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
-        #b_dll_path = os.path.dirname(self._dll_path).encode('utf-8')
-        b_dll_path = ("E:/Dropbox/Licosim/cpprastertools/pkgs/share/proj").encode('utf-8')
+        b_dll_path = (os.path.dirname(self._dll_path)+"/share/proj/").encode('utf-8')
         self.dll.setProjDataDirectory(b_dll_path)
 
         b_root_path = self._root_path.encode('utf-8')
@@ -955,7 +954,7 @@ class LidarDataset:
         wkt = shapely.wkt.dumps(projPoly)
         crsWkt = crsWkt.encode('utf-8')
         wkt = wkt.encode('utf-8')
-        self.dll.doPreProcessing(wkt, crsWkt, 1)
+        self.dll.doPreProcessing(wkt, crsWkt, 5)
 
     def reprojectPolygon(self, poly, crsWkt):
         self.dll.reprojectPolygon.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
@@ -1045,13 +1044,13 @@ class LidarDataset:
         return dbh
 
     def set_allometry(self, a):
-        self.dll.setAllometry.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_int, ctypes.c_double]
+        self.dll.setAllometry.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_int]
 
         if isinstance(a, Allometry):
             self._allometry = a
-            print(str(a.intercept) + " " + str(a.slope) + " " + str(a.transform) + " " + str(a.backtransform))
+            print(str(a.intercept) + " " + str(a.slope) + " " + str(a.transform))
             self.dll.setAllometry(ctypes.c_double(a.intercept), ctypes.c_double(a.slope),
-                                  ctypes.c_int(a.transform), ctypes.c_double(a.backtransform))
+                                  ctypes.c_int(a.transform))
             return
         try:
             print("Trying allometry from project shape")
@@ -1073,14 +1072,13 @@ class LidarDataset:
             print("Set allometry wkt")
 
             self.dll.getAllometry.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                              ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
+                                              ctypes.POINTER(ctypes.c_int)]
             self.dll.getAllometry.restype = None
             slope = ctypes.c_double(0)
             intercept = ctypes.c_double(0)
             transform = ctypes.c_int(0)
-            backtransform = ctypes.c_double(0)
-            self.dll.getAllometry(ctypes.byref(intercept), ctypes.byref(slope), ctypes.byref(transform), ctypes.byref(backtransform))
-            self._allometry = Allometry(intercept.value, slope.value, transform.value, backtransform.value)
+            self.dll.getAllometry(ctypes.byref(intercept), ctypes.byref(slope), ctypes.byref(transform))
+            self._allometry = Allometry(intercept.value, slope.value, transform.value)
             print("get allometry")
 
         except BaseException as e:
@@ -1193,13 +1191,11 @@ class Allometry:
         #3 = log
         #4 = suggest
         self.transform = 0
-        self.backtransform = 0
 
-    def __init__(self, i, s, t, b):
+    def __init__(self, i, s, t):
         self.slope = s
         self.intercept = i
         self.transform = t
-        self.backtransform = b
 
 
 class StructureSummary:

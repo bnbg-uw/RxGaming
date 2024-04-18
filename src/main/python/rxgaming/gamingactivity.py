@@ -1,30 +1,41 @@
-import PIL.Image
+# General
+import matplotlib.pyplot as plt
 import numpy as np
+import os
+
+# QT
 from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QTabWidget, QWidget, QLabel, QListView,
                              QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QAction, QApplication)
 from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QModelIndex
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from matplotlib.patches import Polygon as MplPolygon
-import matplotlib.ticker as ticker
-from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm
-from scipy.spatial import ConvexHull
-from scipy.stats import gaussian_kde
+
+# RxGaming
 from activity import Activity, SaveStateActivity
 from projectsettings import DllStorage
-from shapely.geometry import mapping, Point, Polygon as ShpPolygon
-import raster
-import fiona
+from QtWidgets import SliderWithValue, QMainWindowRx  # custom widgets
+
+# IO
+from shapely.geometry import mapping, Point, Polygon as ShpPolygon  # for displaying on ref plots & for writing .shp
+import raster  # our custom raster wrapper-not full featured but holds data in the way we expect and easy to send to c++
+import fiona  # Read/write .shp and crs
 import fiona.crs
 import rasterio
-import csv
-import descartes
+import csv  # for writing treelists
+import PIL.Image  # To read the temp file for the geotifs
+from PIL import ImageDraw, ImageFont  # To add text to exported geotifs
+import tempfile  # For writing geotifs
+import pickle  # For saving the whole program
 
-import os
-from QtWidgets import QWaitingIndicator, pyqtWorkerthread, SliderWithValue, QMainWindowRx
-import tempfile
-import pickle
-from PIL import ImageDraw, ImageFont
+# Graphics
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # Allows us to redner plots in widgets.
+import descartes # For polygons on ref plots
+from matplotlib.figure import Figure
+from matplotlib.patches import Patch, Polygon as MplPolygon
+import matplotlib.ticker as ticker  # custom axis ticks
+from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm  # coloring the displayed raster
+from scipy.spatial import ConvexHull  # polygons on reference plots
+from scipy.stats import gaussian_kde  # report pages
+import seaborn
+
 
 # GamingActivity class
 # Handles user input and interactions with the projectsettings and surfaces data and treatment results
@@ -364,19 +375,16 @@ class Tabs(QTabWidget):
         self.model.dataChanged.connect(self.update_lower_canvas)
 
         # set up plots for land tab
-        self.ref_ba_points, = self.current_ba_ax.plot(self.ref_tpa[self.ref_ind['ba']],
-                                                      self.ref_ba[self.ref_ind['ba']], 'ko')
-        self.ref_ba_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.current_ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
+                    cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_ba_points, = self.current_ba_ax.plot(self.current_tpa, self.current_ba, 'b^')
 
-        self.ref_mcs_points, = self.current_mcs_ax.plot(self.ref_tpa[self.ref_ind['mcs']],
-                                                        self.ref_mcs[self.ref_ind['mcs']], 'ko')
-        self.ref_mcs_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.current_mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_mcs_points, = self.current_mcs_ax.plot(self.current_tpa, self.current_mcs, 'b^')
 
-        self.ref_cc_points, = self.current_cc_ax.plot(self.ref_tpa[self.ref_ind['cc']],
-                                                        self.ref_cc[self.ref_ind['cc']], 'ko')
-        self.ref_cc_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.current_cc_ax, x=self.ref_tpa[self.ref_ind['cc']], y=self.ref_cc[self.ref_ind['cc']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_cc_points, = self.current_cc_ax.plot(self.current_tpa, self.current_cc, 'b^')
 
         self.upper_canvas.draw_idle()
@@ -422,10 +430,9 @@ class Tabs(QTabWidget):
         self.lower_canvas.mpl_connect("motion_notify_event", self.lower_mcs_hover)
         self.lower_canvas.mpl_connect("motion_notify_event", self.lower_cc_hover)
 
-
-        self.upper_figure.legend((self.ref_cc_points, self.unit_cc_points),
-                                ("Reference Data", "Units"),
-                                 loc='right')
+        handles = [Patch(facecolor=plt.cm.Oranges(100)),
+                   self.unit_cc_points]
+        self.upper_figure.legend(handles, ("Units", "Reference"), loc='right')
 
         if 'GamingActivity.tabs.model_index_row' in saved_state:
             row = saved_state['GamingActivity.tabs.model_index_row']
@@ -489,12 +496,7 @@ class Tabs(QTabWidget):
         ref_ba_chull = ConvexHull(ref_ba_data)
         ref_ba_shp_poly = ShpPolygon(list(zip(ref_ba_data[ref_ba_chull.vertices, 0],
                                               ref_ba_data[ref_ba_chull.vertices, 1])))
-        print(ref_ba_shp_poly)
         self.ref_ba_polygon = descartes.PolygonPatch(ref_ba_shp_poly)
-        self.current_ba_ax.add_patch(self.ref_ba_polygon)
-        self.ref_ba_polygon.set_visible(True)
-        self.ref_ba_polygon.set_color("#89b6ff")
-        self.ref_ba_polygon.set_alpha(0.5)
 
         # MCS
         ref_mcs_data = np.array([self.ref_tpa[self.ref_ind['mcs']], self.ref_mcs[self.ref_ind['mcs']]]).transpose()
@@ -502,10 +504,6 @@ class Tabs(QTabWidget):
         ref_mcs_shp_poly = ShpPolygon(list(zip(ref_mcs_data[ref_mcs_chull.vertices, 0],
                                                ref_mcs_data[ref_mcs_chull.vertices, 1])))
         self.ref_mcs_polygon = descartes.PolygonPatch(ref_mcs_shp_poly)
-        self.current_mcs_ax.add_patch(self.ref_mcs_polygon)
-        self.ref_mcs_polygon.set_visible(True)
-        self.ref_mcs_polygon.set_color("#89b6ff")
-        self.ref_mcs_polygon.set_alpha(0.5)
 
         # CC
         ref_cc_data = np.array([self.ref_tpa[self.ref_ind['cc']], self.ref_cc[self.ref_ind['cc']]]).transpose()
@@ -513,54 +511,16 @@ class Tabs(QTabWidget):
         ref_cc_shp_poly = ShpPolygon(list(zip(ref_cc_data[ref_cc_chull.vertices, 0],
                                                ref_cc_data[ref_cc_chull.vertices, 1])))
         self.ref_cc_polygon = descartes.PolygonPatch(ref_cc_shp_poly)
-        self.current_cc_ax.add_patch(self.ref_cc_polygon)
-        self.ref_cc_polygon.set_visible(True)
-        self.ref_cc_polygon.set_color("#89b6ff")
-        self.ref_cc_polygon.set_alpha(0.5)
-
-        self.targ_ref_cc_polygon = descartes.PolygonPatch(ref_cc_shp_poly)
-        self.lower_cc_ax.add_patch(self.targ_ref_cc_polygon)
-        self.targ_ref_cc_polygon.set_visible(True)
-        self.targ_ref_cc_polygon.set_color("#89b6ff")
-        self.targ_ref_cc_polygon.set_alpha(0.5)
-
-        self.targ_ref_mcs_polygon = descartes.PolygonPatch(ref_mcs_shp_poly)
-        self.lower_mcs_ax.add_patch(self.targ_ref_mcs_polygon)
-        self.targ_ref_mcs_polygon.set_visible(True)
-        self.targ_ref_mcs_polygon.set_color("#89b6ff")
-        self.targ_ref_mcs_polygon.set_alpha(0.5)
-
-        self.targ_ref_ba_polygon = descartes.PolygonPatch(ref_ba_shp_poly)
-        self.lower_ba_ax.add_patch(self.targ_ref_ba_polygon)
-        self.targ_ref_ba_polygon.set_visible(True)
-        self.targ_ref_ba_polygon.set_color("#89b6ff")
-        self.targ_ref_ba_polygon.set_alpha(0.5)
 
         # Unit info setup
         self.unit_names = [rx.get_name() for rx in self.rx_units]
 
-        # get TPA
-        '''self.canvas.overlay = QWaitingIndicator(self.canvas)
-        self.canvas.overlay.setDisplayText("loading unit tpa data...")
-        self.canvas.overlay.show()
-        self.load_current_tpa(project_settings)'''
-
-        # get BA
-        '''self.canvas.overlay = QWaitingIndicator(self.canvas)
-        self.canvas.overlay.setDisplayText("loading unit ba data...")
-        self.canvas.overlay.show()
-        self.load_current_ba(project_settings)'''
-
-        # Get current structure info
-        #   TODO could do this with less passes by zipping over a list of tuples return from list comprehensions:
-        #   ba, tpa, mcs, cc =  zip([(ba, tpa, mcs, cc) for ...])
         self.current_ba = [rx_unit.get_current_structure().ba for rx_unit in self.project_settings.prj_area.get_units()]
         self.current_tpa = [rx_unit.get_current_structure().tpa for rx_unit in self.project_settings.prj_area.get_units()]
         self.current_mcs = [rx_unit.get_current_structure().mcs for rx_unit in self.project_settings.prj_area.get_units()]
         self.current_cc = [rx_unit.get_current_structure().cc for rx_unit in self.project_settings.prj_area.get_units()]
 
         # Get the decisions spaces for each unit.
-        # TODO split this into a pyqtworkerthread.
         if 'GamingActivity.tabs.decision_spaces' in saved_state:
             self.decision_spaces = saved_state['GamingActivity.tabs.decision_spaces']
         else:
@@ -726,24 +686,16 @@ class Tabs(QTabWidget):
         self.lower_cc_ax.set_ylabel("Canopy Cover (%)")
         self.lower_cc_ax.set_xlabel("Density (%s)" % tpa_label)
 
-        self.lower_ba_ax.add_patch(self.targ_ref_ba_polygon)
-        self.lower_mcs_ax.add_patch(self.targ_ref_mcs_polygon)
-        self.lower_cc_ax.add_patch(self.targ_ref_cc_polygon)
-
-
-        self.targ_ref_ba_points, = self.lower_ba_ax.plot(self.ref_tpa[self.ref_ind['ba']],
-                                                        self.ref_ba[self.ref_ind['ba']], 'ko')
-        self.targ_ref_ba_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.lower_ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.target_ba_points, = self.lower_ba_ax.plot(target_tpa, target_ba, 'b^')
 
-        self.targ_ref_mcs_points, = self.lower_mcs_ax.plot(self.ref_tpa[self.ref_ind['mcs']],
-                                                          self.ref_mcs[self.ref_ind['mcs']], 'ko')
-        self.targ_ref_mcs_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.lower_mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.target_mcs_points, = self.lower_mcs_ax.plot(target_tpa, target_mcs, 'b^')
 
-        self.targ_ref_cc_points, = self.lower_cc_ax.plot(self.ref_tpa[self.ref_ind['cc']],
-                                                          self.ref_cc[self.ref_ind['cc']], 'ko')
-        self.targ_ref_cc_points.set_color('#969696')
+        seaborn.kdeplot(ax=self.lower_cc_ax, x=self.ref_tpa[self.ref_ind['cc']],y=self.ref_cc[self.ref_ind['cc']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.target_cc_points, = self.lower_cc_ax.plot(target_tpa, target_cc, 'b^')
 
         self.lower_canvas.draw()
