@@ -76,13 +76,14 @@ class ProjectArea:
 
         shp = [shapely.geometry.shape(feature['geometry']).buffer(0) for feature in self._unit_poly
                if feature['geometry'] is not None]
-        shp = [self._tao_data.reprojectPolygon(s, self._unit_wkt) for s in shp]
+        shp = [self._tao_data.reprojectPolygon(s, self._unit_wkt).buffer(0) for s in shp]
         self._unit_wkt = self._tao_data.get_wkt()
 
         prj = shapely.ops.unary_union([shapely.geometry.shape(feature['geometry']) for feature in self._prj_poly
                                        if feature['geometry'] is not None]).buffer(0)
         prj = prj.convex_hull
         prj = self._tao_data.reprojectPolygon(prj, self._prj_wkt)
+        prj.buffer(0)
         self._prj_wkt = self._tao_data.get_wkt()
 
         if not self.validate_prj_poly(prj) or not self.validate_unit_poly(prj, shp):
@@ -229,12 +230,8 @@ class RxUnit:
                 raise TypeError("Polygon should be a single feature or shape")
         if isinstance(polygon, dict) or isinstance(polygon, collections.OrderedDict):
             return shapely.geometry.shape(polygon['geometry'])
-        elif type(polygon) is shapely.geometry.polygon.Polygon:
+        elif type(polygon) is shapely.geometry.polygon.Polygon or shapely.geometry.multipolygon.MultiPolygon:
             return polygon
-        elif type(polygon) is shapely.geometry.multipolygon.MultiPolygon:
-            return shapely.ops.cascaded_union([
-                shapely.geometry.polygon.Polygon(c.exterior).buffer(0.01).buffer(-0.01) for c in polygon
-                ])
         else:
             raise TypeError("Unrecognized data format")
 
@@ -695,12 +692,8 @@ class LidarDataset:
                 raise TypeError("Polygon should be a single feature or shape")
         if isinstance(polygon, dict) or isinstance(polygon, collections.OrderedDict):
             return shapely.geometry.shape(polygon['geometry'])
-        elif type(polygon) is shapely.geometry.polygon.Polygon:
+        elif type(polygon) is shapely.geometry.polygon.Polygon or shapely.geometry.multipolygon.MultiPolygon:
             return polygon
-        elif type(polygon) is shapely.geometry.multipolygon.MultiPolygon:
-            return shapely.ops.cascaded_union([
-                shapely.geometry.polygon.Polygon(c.exterior).buffer(0.01).buffer(-0.01) for c in polygon
-                ])
         else:
             raise TypeError("Unrecognized data format")
 
@@ -887,8 +880,7 @@ class LidarDataset:
 
             self.dll.setProjDataDirectory.restype = None
             self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
-            # b_dll_path = os.path.dirname(self._dll_path).encode('utf-8')
-            b_dll_path = ("E:/Dropbox/Licosim/cpprastertools/pkgs/share/proj").encode('utf-8')
+            b_dll_path = (os.path.dirname(self._dll_path) + "/share/proj/").encode('utf-8')
             self.dll.setProjDataDirectory(b_dll_path)
 
             b_root_path = self._root_path.encode('utf-8')

@@ -5,8 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="871324ea-78ff-4d6b-9a72-e05cfd3e9945" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/__init__.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" afterDir="false" />
@@ -26,21 +26,21 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 6
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6
+}</component>
   <component name="ProjectId" id="2eKoNMIpjduT0aSlxgowJxvz8cv" />
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

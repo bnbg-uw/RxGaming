@@ -1,5 +1,4 @@
 # General
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 
@@ -26,8 +25,9 @@ import tempfile  # For writing geotifs
 import pickle  # For saving the whole program
 
 # Graphics
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # Allows us to redner plots in widgets.
-import descartes # For polygons on ref plots
+import descartes  # For polygons on ref plots
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch, Polygon as MplPolygon
 import matplotlib.ticker as ticker  # custom axis ticks
@@ -1029,13 +1029,9 @@ class Tabs(QTabWidget):
 
         # check what to show
         if event.inaxes == self.lower_ba_ax:
-            cont_1, ind_1 = self.targ_ref_ba_points.contains(event)
             cont_2, ind_2 = self.target_ba_points.contains(event)
             if cont_2:
                 self.update_annot(ind_2, self.unit_names, self.target_ba_points, self.lower_ba_annot)
-                self.lower_ba_annot.set_visible(True)
-            elif cont_1:
-                self.update_annot(ind_1, self.ref_names, self.targ_ref_ba_points, self.lower_ba_annot)
                 self.lower_ba_annot.set_visible(True)
         self.lower_canvas.draw_idle()
 
@@ -1043,15 +1039,10 @@ class Tabs(QTabWidget):
         vis = self.lower_mcs_annot.get_visible()
         if event.inaxes == self.lower_mcs_ax:
             cont_1, ind_1 = self.target_mcs_points.contains(event)
-            cont_2, ind_2 = self.targ_ref_mcs_points.contains(event)
             if cont_1:
                 self.update_annot(ind_1, self.unit_names, self.target_mcs_points, self.lower_mcs_annot)
                 self.lower_mcs_annot.set_visible(True)
                 self.unit_mcs_polygons[ind_1['ind'][0]].set_visible(True)
-                self.lower_canvas.draw_idle()
-            elif cont_2:
-                self.update_annot(ind_2, self.ref_names, self.targ_ref_mcs_points, self.lower_mcs_annot)
-                self.lower_mcs_annot.set_visible(True)
                 self.lower_canvas.draw_idle()
             else:
                 if vis:
@@ -1069,15 +1060,10 @@ class Tabs(QTabWidget):
         vis = self.lower_cc_annot.get_visible()
         if event.inaxes == self.lower_cc_ax:
             cont_1, ind_1 = self.target_cc_points.contains(event)
-            cont_2, ind_2 = self.targ_ref_cc_points.contains(event)
             if cont_1:
                 self.update_annot(ind_1, self.unit_names, self.target_cc_points, self.lower_cc_annot)
                 self.lower_cc_annot.set_visible(True)
                 self.unit_cc_polygons[ind_1['ind'][0]].set_visible(True)
-                self.lower_canvas.draw_idle()
-            elif cont_2:
-                self.update_annot(ind_2, self.ref_names, self.targ_ref_cc_points, self.lower_cc_annot)
-                self.lower_cc_annot.set_visible(True)
                 self.lower_canvas.draw_idle()
             else:
                 if vis:
