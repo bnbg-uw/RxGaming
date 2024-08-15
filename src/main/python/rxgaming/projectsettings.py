@@ -504,6 +504,9 @@ class RxUnit:
         print("treatment")
         return self._treat_chm, self._treat_hill, self._treat_taos, self._treat_basin, self._treat_best_struct
 
+    def get_treated_structure(self):
+        return self._treat_best_struct
+
     def get_treat_basin_dll(self):
         self._tao_data.dll.getBasinMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),

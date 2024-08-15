@@ -4,7 +4,8 @@ import os
 
 # QT
 from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QTabWidget, QWidget, QLabel, QListView,
-                             QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QAction, QApplication)
+                             QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QAction, QApplication,
+                             QMessageBox)
 from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QModelIndex
 
 # RxGaming
@@ -124,12 +125,30 @@ class GamingActivity(Activity):
     def menu_save(self):
         if 'save_file_location' in self.saved_state:
             print(self.saved_state['save_file_location'])
-            if os.path.isfile(self.saved_state['save_file_location']):
-                with open(self.saved_state['save_file_location'], 'wb') as fp:
-                    pickle.dump(self.save(), fp)
-                self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
+            if type(self.saved_state['LastActivity']) is not type(self):
+                msg = QMessageBox()
+                msg.setText("The file you are saving to is a project settings instance, would you like to overwrite?")
+                msg.setWindowTitle("Overwrite save state?")
+                msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                msg.buttonClicked.connect(self.menu_save_connect)
+                msg.exec_()
             else:
-                self.menu_save_as()
+                if os.path.isfile(self.saved_state['save_file_location']):
+                    self.menu_save_success()
+                else:
+                    self.menu_save_as()
+        else:
+            self.menu_save_as()
+
+    def menu_save_success(self):
+        with open(self.saved_state['save_file_location'], 'wb') as fp:
+            pickle.dump(self.save(), fp)
+        self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
+
+    def menu_save_connect(self, i):
+        print(i.text())
+        if i.text() == "&Yes":
+            self.menu_save_success()
         else:
             self.menu_save_as()
 
@@ -270,7 +289,7 @@ class Tabs(QTabWidget):
         self.cut_range = SliderWithValue(Qt.Horizontal)
         self.cut_range.setMinimum(0)
         self.cut_range.setMaximum(120)
-        self.cut_range.setValue(21)
+        self.cut_range.setValue(30)
 
         self.raster_viewmode = QComboBox()
         self.raster_viewmode.addItems(["Canopy Model", "Basins", "Clumps"])
@@ -326,21 +345,16 @@ class Tabs(QTabWidget):
 
         # Create land view tab
         self.land_tab.layout = QVBoxLayout()
-        self.upper_figure = Figure()
-        self.current_ba_ax = self.upper_figure.add_subplot(1, 3, 1)
-        self.current_mcs_ax = self.upper_figure.add_subplot(1, 3, 2)
-        self.current_cc_ax = self.upper_figure.add_subplot(1, 3, 3)
-        self.upper_canvas = FigureCanvas(self.upper_figure)
-
-        self.lower_figure = Figure()
-        self.lower_ba_ax = self.lower_figure.add_subplot(131)
-        self.lower_mcs_ax = self.lower_figure.add_subplot(132)
-        self.lower_cc_ax = self.lower_figure.add_subplot(133)
-        self.lower_canvas = FigureCanvas(self.lower_figure)
+        self.reference_figure = Figure()
+        self.ba_ax = self.reference_figure.add_subplot(1, 3, 1)
+        self.mcs_ax = self.reference_figure.add_subplot(1, 3, 2)
+        self.mcs_ax.set_yscale("log")
+        self.mcs_ax.set_ylim(bottom=0)
+        self.cc_ax = self.reference_figure.add_subplot(1, 3, 3)
+        self.reference_canvas = FigureCanvas(self.reference_figure)
 
         # QT window layout and stuff
-        self.land_tab.layout.addWidget(self.upper_canvas)
-        self.land_tab.layout.addWidget(self.lower_canvas)
+        self.land_tab.layout.addWidget(self.reference_canvas)
         self.land_tab.setLayout(self.land_tab.layout)
 
         # Add tabs to widget
@@ -353,17 +367,17 @@ class Tabs(QTabWidget):
         ba_label = r"$feet^2\ ac^{-1}$"
         tpa_label = r"$ trees\ ac^{-1}$"
 
-        self.current_ba_ax.set_title("Current Basal Area")
-        self.current_ba_ax.set_ylabel("Basal Area (%s)" % ba_label)
-        self.current_ba_ax.set_xlabel("Density (%s)" % tpa_label)
+        self.ba_ax.set_title("Basal Area")
+        self.ba_ax.set_ylabel("Basal Area (%s)" % ba_label)
+        self.ba_ax.set_xlabel("Density (%s)" % tpa_label)
 
-        self.current_mcs_ax.set_title("Current Mean Clump Size")
-        self.current_mcs_ax.set_ylabel("Mean Clump Size (n trees)")
-        self.current_mcs_ax.set_xlabel("Density (%s)" % tpa_label)
+        self.mcs_ax.set_title("Mean Clump Size")
+        self.mcs_ax.set_ylabel("Mean Clump Size (n trees, log)")
+        self.mcs_ax.set_xlabel("Density (%s)" % tpa_label)
 
-        self.current_cc_ax.set_title("Current Canopy Cover")
-        self.current_cc_ax.set_ylabel("Canopy Cover (%)")
-        self.current_cc_ax.set_xlabel("Density (Trees %s)" % tpa_label)
+        self.cc_ax.set_title("Canopy Cover")
+        self.cc_ax.set_ylabel("Canopy Cover (%)")
+        self.cc_ax.set_xlabel("Density (Trees %s)" % tpa_label)
 
         #set model for stand tab list view
         self.stand_tab_list_view.setModel(self.model)
@@ -372,67 +386,59 @@ class Tabs(QTabWidget):
         self.stand_tab_list_view.selectionModel().currentChanged.connect(self.reset_page)
         self.stand_tab_list_view.selectionModel().currentChanged.connect(self.reset_button)
         self.stand_tab_list_view.selectionModel().currentChanged.connect(self.update_raster_canvas)
-        self.model.dataChanged.connect(self.update_lower_canvas)
 
         # set up plots for land tab
-        seaborn.kdeplot(ax=self.current_ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
-                    cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.unit_ba_points, = self.current_ba_ax.plot(self.current_tpa, self.current_ba, 'b^')
-
-        seaborn.kdeplot(ax=self.current_mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
+        seaborn.kdeplot(ax=self.ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
                         cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.unit_mcs_points, = self.current_mcs_ax.plot(self.current_tpa, self.current_mcs, 'b^')
+        self.unit_ba_points, = self.ba_ax.plot(self.current_tpa, self.current_ba, 'b^')
 
-        seaborn.kdeplot(ax=self.current_cc_ax, x=self.ref_tpa[self.ref_ind['cc']], y=self.ref_cc[self.ref_ind['cc']],
+        seaborn.kdeplot(ax=self.mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
                         cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.unit_cc_points, = self.current_cc_ax.plot(self.current_tpa, self.current_cc, 'b^')
+        self.unit_mcs_points, = self.mcs_ax.plot(self.current_tpa, self.current_mcs, 'b^')
 
-        self.upper_canvas.draw_idle()
+        seaborn.kdeplot(ax=self.cc_ax, x=self.ref_tpa[self.ref_ind['cc']], y=self.ref_cc[self.ref_ind['cc']],
+                        cmap="Oranges", fill=True, bw_adjust=0.5)
+        self.unit_cc_points, = self.cc_ax.plot(self.current_tpa, self.current_cc, 'b^')
 
-        #ANNOTATIONS upper/current:
-        self.current_ba_annot = self.current_ba_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
-                                                            bbox=dict(boxstyle="round", fc='w'),
-                                                            arrowprops=dict(arrowstyle='->'))
-        self.current_ba_annot.set_visible(True)
-        self.upper_canvas.mpl_connect("motion_notify_event", self.current_ba_hover)
+        self.target_points = [self.ba_ax.plot(0, 0, "gs")[0], self.mcs_ax.plot(0, 0, "gs")[0], self.cc_ax.plot(0, 0, "gs")[0]]
+        self.treated_points = [self.ba_ax.plot(0, 0, "mo")[0], self.mcs_ax.plot(0, 0, "mo")[0], self.cc_ax.plot(0, 0, "mo")[0]]
 
-        self.current_mcs_annot = self.current_mcs_ax.annotate("", xy=(0, 0), xytext=(-20, 20),
-                                                              textcoords="offset points",
-                                                              bbox=dict(boxstyle="round", fc='w'),
-                                                              arrowprops=dict(arrowstyle='->'))
-        self.current_mcs_annot.set_visible(False)
-        self.upper_canvas.mpl_connect("motion_notify_event", self.current_mcs_hover)
+        self.cur_targ_arrow = [self.ba_ax.arrow(0, 0, 0, 0), self.mcs_ax.arrow(0, 0, 0, 0), self.cc_ax.arrow(0, 0, 0, 0)]
+        self.targ_treated_arrow = [self.ba_ax.arrow(0, 0, 0, 0), self.mcs_ax.arrow(0, 0, 0, 0), self.cc_ax.arrow(0, 0, 0, 0)]
 
-        self.current_cc_annot = self.current_cc_ax.annotate("", xy=(0, 0), xytext=(-20, 20),
-                                                              textcoords="offset points",
-                                                              bbox=dict(boxstyle="round", fc='w'),
-                                                              arrowprops=dict(arrowstyle='->'))
-        self.current_cc_annot.set_visible(False)
-        self.upper_canvas.mpl_connect("motion_notify_event", self.current_cc_hover)
+        [[x.set_visible(False), y.set_visible(False)] for x, y in zip(self.cur_targ_arrow, self.targ_treated_arrow)]
 
-        self.upper_canvas.mpl_connect("button_press_event", self.rx_unit_pick)
+        self.reference_canvas.draw_idle()
 
-        #ANNOTATIONS lower/targets
-        self.lower_cc_annot = self.lower_cc_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
-                                                          bbox=dict(boxstyle="round", fc='w'),
-                                                          arrowprops=dict(arrowstyle='->'))
-        self.lower_cc_annot.set_visible(False)
-        self.lower_mcs_annot = self.lower_mcs_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
-                                                          bbox=dict(boxstyle="round", fc='w'),
-                                                          arrowprops=dict(arrowstyle='->'))
-        self.lower_mcs_annot.set_visible(False)
-        self.lower_ba_annot = self.lower_ba_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
-                                                        bbox=dict(boxstyle="round", fc='w'),
-                                                        arrowprops=dict(arrowstyle='->'))
-        self.lower_ba_annot.set_visible(True)
+        #ANNOTATIONS reference:
+        self.ba_annot = self.ba_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
+                                            bbox=dict(boxstyle="round", fc='w'),
+                                            arrowprops=dict(arrowstyle='->'))
+        self.ba_annot.set_visible(True)
+        self.reference_canvas.mpl_connect("motion_notify_event", self.ba_hover)
 
-        self.lower_canvas.mpl_connect("motion_notify_event", self.lower_ba_hover)
-        self.lower_canvas.mpl_connect("motion_notify_event", self.lower_mcs_hover)
-        self.lower_canvas.mpl_connect("motion_notify_event", self.lower_cc_hover)
+        self.mcs_annot = self.mcs_ax.annotate("", xy=(0, 0), xytext=(-20, 20),
+                                              textcoords="offset points",
+                                              bbox=dict(boxstyle="round", fc='w'),
+                                              arrowprops=dict(arrowstyle='->'))
+        self.mcs_annot.set_visible(False)
+        self.reference_canvas.mpl_connect("motion_notify_event", self.mcs_hover)
+
+        self.cc_annot = self.cc_ax.annotate("", xy=(0, 0), xytext=(-20, 20),
+                                            textcoords="offset points",
+                                            bbox=dict(boxstyle="round", fc='w'),
+                                            arrowprops=dict(arrowstyle='->'))
+        self.cc_annot.set_visible(False)
+        self.reference_canvas.mpl_connect("motion_notify_event", self.cc_hover)
+
+        self.reference_canvas.mpl_connect("button_press_event", self.rx_unit_pick)
 
         handles = [Patch(facecolor=plt.cm.Oranges(100)),
-                   self.unit_cc_points]
-        self.upper_figure.legend(handles, ("Units", "Reference"), loc='right')
+                   self.unit_cc_points, self.target_points[0], self.treated_points[0]]
+        self.reference_figure.legend(handles, ("Reference", "Units", "Targets", "Treated"), loc='right')
+
+        [x.set_visible(False) for x in self.target_points]
+        [x.set_visible(False) for x in self.treated_points]
 
         if 'GamingActivity.tabs.model_index_row' in saved_state:
             row = saved_state['GamingActivity.tabs.model_index_row']
@@ -446,8 +452,7 @@ class Tabs(QTabWidget):
             self.raster_viewmode.setCurrentIndex(saved_state['GamingActivity.tabs.viewmode'])
         if 'GamingActivity.tabs.treatmethod' in saved_state:
             self.treatment_method.setCurrentIndex(saved_state['GamingActivity.tabs.treatmethod'])
-        self.upper_canvas.draw_idle()
-        self.update_lower_canvas()
+        self.reference_canvas.draw_idle()
         self.update_raster_canvas()
 
     # TODO shift off of project_settings.prj_area.get_units() to self.rx_units.
@@ -562,8 +567,8 @@ class Tabs(QTabWidget):
                 inter = MplPolygon([[0, 0]])
             else:
                 inter = descartes.PolygonPatch(inter)
-            self.current_ba_ax.add_patch(poly)
-            self.current_ba_ax.add_patch(inter)
+            self.ba_ax.add_patch(poly)
+            self.ba_ax.add_patch(inter)
             poly.set_visible(False)
             inter.set_visible(False)
             poly.set_alpha(0.6)
@@ -593,8 +598,8 @@ class Tabs(QTabWidget):
                 inter = MplPolygon([[0, 0]])
             else:
                 inter = descartes.PolygonPatch(inter)
-            self.current_mcs_ax.add_patch(poly)
-            self.current_mcs_ax.add_patch(inter)
+            self.mcs_ax.add_patch(poly)
+            self.mcs_ax.add_patch(inter)
             poly.set_visible(False)
             inter.set_visible(False)
             poly.set_alpha(0.6)
@@ -624,8 +629,8 @@ class Tabs(QTabWidget):
                 inter = MplPolygon([[0, 0]])
             else:
                 inter = descartes.PolygonPatch(inter)
-            self.current_cc_ax.add_patch(poly)
-            self.current_cc_ax.add_patch(inter)
+            self.cc_ax.add_patch(poly)
+            self.cc_ax.add_patch(inter)
             poly.set_visible(False)
             inter.set_visible(False)
             poly.set_alpha(0.6)
@@ -659,46 +664,6 @@ class Tabs(QTabWidget):
         else:
             raise ValueError("i is not a valid page index.")
         self.update_raster_canvas()
-
-    # update lower canvas on the overall view.
-    def update_lower_canvas(self):
-        target_tpa = [unit.get_target_structure().tpa for unit in self.rx_units]
-        target_ba = [unit.get_target_structure().ba for unit in self.rx_units]
-        target_mcs = [unit.get_target_structure().mcs for unit in self.rx_units]
-        target_cc = [unit.get_target_structure().cc for unit in self.rx_units]
-
-        self.lower_ba_ax.cla()
-        self.lower_mcs_ax.cla()
-        self.lower_cc_ax.cla()
-
-        ba_label = r"$feet^2\ ac^{-1}$"
-        tpa_label = r"$ trees\ ac^{-1}$"
-
-        self.lower_ba_ax.set_title("Target Basal Area")
-        self.lower_ba_ax.set_ylabel("Basal Area (%s)" % ba_label)
-        self.lower_ba_ax.set_xlabel("Density (%s)" % tpa_label)
-
-        self.lower_mcs_ax.set_title("Target Mean Clump Size")
-        self.lower_mcs_ax.set_ylabel("Mean Clump Size (n trees)")
-        self.lower_mcs_ax.set_xlabel("Density (%s)" % tpa_label)
-
-        self.lower_cc_ax.set_title("Target Canopy Cover")
-        self.lower_cc_ax.set_ylabel("Canopy Cover (%)")
-        self.lower_cc_ax.set_xlabel("Density (%s)" % tpa_label)
-
-        seaborn.kdeplot(ax=self.lower_ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.target_ba_points, = self.lower_ba_ax.plot(target_tpa, target_ba, 'b^')
-
-        seaborn.kdeplot(ax=self.lower_mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.target_mcs_points, = self.lower_mcs_ax.plot(target_tpa, target_mcs, 'b^')
-
-        seaborn.kdeplot(ax=self.lower_cc_ax, x=self.ref_tpa[self.ref_ind['cc']],y=self.ref_cc[self.ref_ind['cc']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
-        self.target_cc_points, = self.lower_cc_ax.plot(target_tpa, target_cc, 'b^')
-
-        self.lower_canvas.draw()
 
     # Parent function for figuring out what to draw on the treat view.
     def update_raster_canvas(self):
@@ -971,111 +936,94 @@ class Tabs(QTabWidget):
         text = '{}'.format("\n".join([str(names[n]) for n in ind['ind']]))
         annot.set_text(text)
 
+    # This updates the hover targ and treated points and arrows.
+    def hover_arrows(self, unit_idx, ax_idx, metric_idx):
+        axes = [self.ba_ax, self.mcs_ax, self.cc_ax]
+
+        current = self.rx_units[unit_idx].get_current_structure()
+        target = self.rx_units[unit_idx].get_target_structure()
+        self.target_points[ax_idx].set_data([target.tpa], [target[metric_idx]])
+        self.target_points[ax_idx].set_visible(True)
+        self.cur_targ_arrow[ax_idx].set_data(x=current.tpa, y=current[metric_idx], dx=target.tpa-current.tpa,
+                                       dy=target[metric_idx] - current[metric_idx])
+        self.cur_targ_arrow[ax_idx].set_visible(True)
+
+        treated = self.rx_units[unit_idx].get_treated_structure()
+        if treated is not None:
+            self.treated_points[ax_idx].set_data([treated.tpa], [treated[metric_idx]])
+            self.treated_points[ax_idx].set_visible(True)
+            self.targ_treated_arrow[ax_idx].set_data(x=target.tpa, y=target[metric_idx], dx=treated.tpa - target.tpa,
+                                           dy=treated[metric_idx] - target[metric_idx])
+            self.targ_treated_arrow[ax_idx].set_visible(True)
+
+    # This resets the arrows and points.
+    def clean_arrows(self, ax_idx):
+        self.target_points[ax_idx].set_visible(False)
+        self.treated_points[ax_idx].set_visible(False)
+        self.cur_targ_arrow[ax_idx].set_visible(False)
+        self.targ_treated_arrow[ax_idx].set_visible(False)
+
     # hover prep for current ba.
-    def current_ba_hover(self, event):
+    def ba_hover(self, event):
         #clean slate
-        self.current_ba_annot.set_visible(False)
+        self.ba_annot.set_visible(False)
         for i in range(len(self.unit_ba_polygons)):
             self.unit_ba_polygons[i].set_visible(False)
             self.unit_ba_intersections[i].set_visible(False)
+        self.clean_arrows(0)
 
         #check what to show
-        if event.inaxes == self.current_ba_ax:
+        if event.inaxes == self.ba_ax:
             cont_2, ind_2 = self.unit_ba_points.contains(event)
             if cont_2:
-                self.update_annot(ind_2, self.unit_names, self.unit_ba_points, self.current_ba_annot)
-                self.unit_ba_polygons[ind_2['ind'][0]].set_visible(True)
-                self.unit_ba_intersections[ind_2['ind'][0]].set_visible(True)
-                self.current_ba_annot.set_visible(True)
-        self.upper_canvas.draw_idle()
+                self.update_annot(ind_2, self.unit_names, self.unit_ba_points, self.ba_annot)
+                x = ind_2['ind'][0]
+                self.unit_ba_polygons[x].set_visible(True)
+                self.unit_ba_intersections[x].set_visible(True)
+                self.ba_annot.set_visible(True)
+                self.hover_arrows(x, 0, 1)
 
-    def current_mcs_hover(self, event):
+        self.reference_canvas.draw_idle()
+
+    def mcs_hover(self, event):
         # clean slate
-        self.current_mcs_annot.set_visible(False)
+        self.mcs_annot.set_visible(False)
         for i in range(len(self.unit_ba_polygons)):
             self.unit_mcs_polygons[i].set_visible(False)
             self.unit_mcs_intersections[i].set_visible(False)
+        self.clean_arrows(1)
 
         # check what to show
-        if event.inaxes == self.current_mcs_ax:
+        if event.inaxes == self.mcs_ax:
             cont_2, ind_2 = self.unit_mcs_points.contains(event)
             if cont_2:
-                self.update_annot(ind_2, self.unit_names, self.unit_mcs_points, self.current_mcs_annot)
-                self.unit_mcs_polygons[ind_2['ind'][0]].set_visible(True)
-                self.unit_mcs_intersections[ind_2['ind'][0]].set_visible(True)
-                self.current_mcs_annot.set_visible(True)
-        self.upper_canvas.draw_idle()
+                self.update_annot(ind_2, self.unit_names, self.unit_mcs_points, self.mcs_annot)
+                x = ind_2['ind'][0]
+                self.unit_mcs_polygons[x].set_visible(True)
+                self.unit_mcs_intersections[x].set_visible(True)
+                self.mcs_annot.set_visible(True)
+                self.hover_arrows(x, 1, 2)
+        self.reference_canvas.draw_idle()
 
-    def current_cc_hover(self, event):
+    def cc_hover(self, event):
         # clean slate
-        self.current_cc_annot.set_visible(False)
+        self.cc_annot.set_visible(False)
         for i in range(len(self.unit_cc_polygons)):
             self.unit_cc_polygons[i].set_visible(False)
             self.unit_cc_intersections[i].set_visible(False)
+        self.clean_arrows(2)
 
         # check what to show
-        if event.inaxes == self.current_cc_ax:
+        if event.inaxes == self.cc_ax:
             cont_2, ind_2 = self.unit_cc_points.contains(event)
             if cont_2:
-                self.update_annot(ind_2, self.unit_names, self.unit_cc_points, self.current_cc_annot)
-                self.unit_cc_polygons[ind_2['ind'][0]].set_visible(True)
-                self.unit_cc_intersections[ind_2['ind'][0]].set_visible(True)
-                self.current_cc_annot.set_visible(True)
-        self.upper_canvas.draw_idle()
-
-    def lower_ba_hover(self, event):
-        # clean slate
-        self.lower_ba_annot.set_visible(False)
-
-        # check what to show
-        if event.inaxes == self.lower_ba_ax:
-            cont_2, ind_2 = self.target_ba_points.contains(event)
-            if cont_2:
-                self.update_annot(ind_2, self.unit_names, self.target_ba_points, self.lower_ba_annot)
-                self.lower_ba_annot.set_visible(True)
-        self.lower_canvas.draw_idle()
-
-    def lower_mcs_hover(self, event):
-        vis = self.lower_mcs_annot.get_visible()
-        if event.inaxes == self.lower_mcs_ax:
-            cont_1, ind_1 = self.target_mcs_points.contains(event)
-            if cont_1:
-                self.update_annot(ind_1, self.unit_names, self.target_mcs_points, self.lower_mcs_annot)
-                self.lower_mcs_annot.set_visible(True)
-                self.unit_mcs_polygons[ind_1['ind'][0]].set_visible(True)
-                self.lower_canvas.draw_idle()
-            else:
-                if vis:
-                    self.lower_mcs_annot.set_visible(False)
-                    for i in range(len(self.unit_mcs_polygons)):
-                        self.unit_mcs_polygons[i].set_visible(False)
-                    self.lower_canvas.draw_idle()
-        else:
-            self.lower_mcs_annot.set_visible(False)
-            for i in range(len(self.unit_mcs_polygons)):
-                self.unit_mcs_polygons[i].set_visible(False)
-            self.lower_canvas.draw_idle()
-
-    def lower_cc_hover(self, event):
-        vis = self.lower_cc_annot.get_visible()
-        if event.inaxes == self.lower_cc_ax:
-            cont_1, ind_1 = self.target_cc_points.contains(event)
-            if cont_1:
-                self.update_annot(ind_1, self.unit_names, self.target_cc_points, self.lower_cc_annot)
-                self.lower_cc_annot.set_visible(True)
-                self.unit_cc_polygons[ind_1['ind'][0]].set_visible(True)
-                self.lower_canvas.draw_idle()
-            else:
-                if vis:
-                    self.lower_cc_annot.set_visible(False)
-                    for i in range(len(self.unit_cc_polygons)):
-                        self.unit_cc_polygons[i].set_visible(False)
-                    self.lower_canvas.draw_idle()
-        else:
-            self.lower_cc_annot.set_visible(False)
-            for i in range(len(self.unit_cc_polygons)):
-                self.unit_cc_polygons[i].set_visible(False)
-            self.lower_canvas.draw_idle()
+                self.update_annot(ind_2, self.unit_names, self.unit_cc_points, self.cc_annot)
+                x = ind_2['ind'][0]
+                self.unit_cc_polygons[x].set_visible(True)
+                self.unit_cc_intersections[x].set_visible(True)
+                self.cc_annot.set_visible(True)
+                self.hover_arrows(x, 2, 4)
+        self.reference_canvas.draw_idle()
 
     # Function to connect to a signal from clicking on a unit.
     def rx_unit_pick(self, event):

@@ -24,7 +24,6 @@ class ProjectSettingsActivity(Activity):
         self.reference_data_path_edit = QFileSelectionLineEdit(filter="Comma-separated values (*.csv)")
         self.lidar_data_path_edit = QFileSelectionLineEdit(file_type=QFileSelectionLineEdit.FileType.Directory)
         self.allometry_coefficients_edit = QLineEdit()
-        #self.allometry_coefficients_edit.setText("-5.1, 2.5")
         self.unit_name_edit = QLineEdit()
         self.auto_save = QCheckBox()
         self.auto_save_line = QFileSelectionLineEdit(filter="*.dat", new_file=True)
@@ -36,7 +35,6 @@ class ProjectSettingsActivity(Activity):
         self.form_layout.addRow("Treatment unit polygon shapefile", self.unit_poly_path_edit)
         self.form_layout.addRow("Reference data table", self.reference_data_path_edit)
         self.form_layout.addRow("Lidar data root folder", self.lidar_data_path_edit)
-        #self.form_layout.addRow("Allometric Coefficients", self.allometry_coefficients_edit)
         self.form_layout.addRow("Unit name field:", self.unit_name_edit)
         self.form_layout.addRow("Auto-Save?", self.auto_save)
         self.form_layout.addRow("Save File Location", self.auto_save_line)
@@ -63,8 +61,6 @@ class ProjectSettingsActivity(Activity):
             self.reference_data_path_edit.setText(saved_state["ProjectSettingsActivity.reference_data_path"])
         if "ProjectSettingsActivity.lidar_data_path" in saved_state:
             self.lidar_data_path_edit.setText(saved_state["ProjectSettingsActivity.lidar_data_path"])
-        #if "ProjectSettingsActivity.allometry_coefficients" in saved_state:
-        #    self.allometry_coefficients_edit.setText(saved_state['ProjectSettingsActivity.allometry_coefficients'])
         if "ProjectSettingsActivity.unit_name" in saved_state:
             self.unit_name_edit.setText(saved_state['ProjectSettingsActivity.unit_name'])
         if "ProjectSettingsActivity.auto_save" in saved_state:
@@ -79,7 +75,6 @@ class ProjectSettingsActivity(Activity):
         saved_state["ProjectSettingsActivity.unit_poly_path"] = self.unit_poly_path_edit.text()
         saved_state["ProjectSettingsActivity.reference_data_path"] = self.reference_data_path_edit.text()
         saved_state["ProjectSettingsActivity.lidar_data_path"] = self.lidar_data_path_edit.text()
-        #saved_state["ProjectSettingsActivity.allometry_coefficients"] = self.allometry_coefficients_edit.text()
         saved_state["ProjectSettingsActivity.unit_name"] = self.unit_name_edit.text()
         saved_state["ProjectSettingsActivity.auto_save"] = self.auto_save.isChecked()
         saved_state['ProjectSettingsActivity.auto_save_line'] = self.auto_save_line.text()
