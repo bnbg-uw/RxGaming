@@ -103,7 +103,7 @@ class GamingActivity(Activity):
         self.print_action.triggered.connect(self.print)
 
         self.license_action = QAction("&License")
-        self.print_action.triggered.connect(self.license)
+        self.license_action.triggered.connect(self.license)
 
         self.main_menu = self.window.menuBar()
         self.file_menu = self.main_menu.addMenu("File")
