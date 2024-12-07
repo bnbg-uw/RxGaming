@@ -1,3 +1,18 @@
+"""
+    Copyright (C) 2024  University of Washington
+    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
+
+Bryce Bartl-Geller
+University of Washington Forest Resilience Lab
+12/6/2024
+
+raster.py
+This is a barebones raster library that gets the data in a format that is good
+for displaying using qt and easy to pass back and forth to the dll.
+"""
+
 import rasterio
 import numpy as np
 import math

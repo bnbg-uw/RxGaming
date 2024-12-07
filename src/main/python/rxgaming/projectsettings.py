@@ -1,5 +1,20 @@
-import fiona
-import shapely.geometry
+"""
+    Copyright (C) 2024  University of Washington
+    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
+
+Bryce Bartl-Geller
+University of Washington Forest Resilience Lab
+12/6/2024
+
+projectsettings.py
+This file is the guts of the data and processing as well as the link to the dll part of the tool.
+There's alot of important classes in here: ProjectSettings, LidarDataset, ProjectArea, RxUnit, Allometry, StructureSummary
+"""
+
+import fiona # shapefiles i/o
+import shapely.geometry  # shapefile geometry.
 import shapely.ops
 import shapely.wkt
 import collections
@@ -7,20 +22,25 @@ import numpy as np
 import os
 import copy
 
-import raster
-import ctypes
+import raster  # our custom raster class
+import ctypes # for our dll link
 from datetime import datetime
 import traceback
 
+
+# This class more or less holds all the data.
 class ProjectSettings:
-    def __init__(self, name, prj_poly_path, unit_poly_path, ref_db_path, lidar_data_path, unit_name,
-                 allometry_coefficients, prop_table_path, dll_path):
+    def __init__(self, name, unit_poly_path, ref_db_path, lidar_data_path, unit_name, nthreads,
+                 prop_table_path, dll_path):
         self._name = name
-        # repeated lines of code... with set_reference_data()
-        try:
-            self._ref_data = np.genfromtxt(ref_db_path, delimiter=',', dtype=None, names=True, encoding=None)
-        except Exception as exc:
-            raise TypeError("Could not read reference data.  Expected a csv") from exc
+
+        if ref_db_path != "":
+            try:
+                self._ref_data = np.genfromtxt(ref_db_path, delimiter=',', dtype=None, names=True, encoding=None)
+            except Exception as exc:
+                raise TypeError("Could not read reference data.  Expected a csv") from exc
+        else:
+            self._ref_data = None
 
         try:
             self._mcs_prop = np.genfromtxt(prop_table_path, delimiter=',', dtype=None, names=True, encoding=None)
@@ -28,7 +48,7 @@ class ProjectSettings:
             raise TypeError("Could not read MCS proportion data.") from exc
 
         print(dll_path)
-        self.prj_area = ProjectArea(prj_poly_path, unit_poly_path, lidar_data_path, unit_name, allometry_coefficients, dll_path)
+        self.prj_area = ProjectArea(unit_poly_path, lidar_data_path, unit_name, nthreads, dll_path)
 
     def get_name(self):
         return self._name
@@ -61,50 +81,43 @@ class ProjectSettings:
     def get_mcs_prop(self):
         return self._mcs_prop
 
-
+# These are nesting class, the project area holds the lidar data and the rxunits.
 class ProjectArea:
-    def __init__(self, prj_poly_path, unit_poly_path, lidar_data_path, unit_name, allometry_coefficients, dll_path):
-        with fiona.open(prj_poly_path, 'r') as shp:
-            self._prj_wkt = shp.meta['crs_wkt']
-            self._prj_poly = list(shp)
+    def __init__(self, unit_poly_path, lidar_data_path, unit_name, nthreads, dll_path):
         with fiona.open(unit_poly_path, 'r') as shp:
-            self._unit_wkt = shp.meta['crs_wkt']
+            self._unit_wkt = shp.crs_wkt
             self._unit_poly = list(shp)
 
         self._tao_data = LidarDataset(lidar_data_path, dll_path)
 
-
+        # this cleans up bad geometry (self intersections, duplicated points, etc.
         shp = [shapely.geometry.shape(feature['geometry']).buffer(0) for feature in self._unit_poly
                if feature['geometry'] is not None]
         shp = [self._tao_data.reprojectPolygon(s, self._unit_wkt).buffer(0) for s in shp]
         self._unit_wkt = self._tao_data.get_wkt()
 
-        prj = shapely.ops.unary_union([shapely.geometry.shape(feature['geometry']) for feature in self._prj_poly
-                                       if feature['geometry'] is not None]).buffer(0)
-        prj = prj.convex_hull
-        prj = self._tao_data.reprojectPolygon(prj, self._prj_wkt)
-        prj.buffer(0)
-        self._prj_wkt = self._tao_data.get_wkt()
+        merged = shapely.unary_union(shp)
+        self._tao_data.set_allometry(merged.convex_hull)
+        shp = self._tao_data.doPreProcessing(shp, nthreads)
 
-        if not self.validate_prj_poly(prj) or not self.validate_unit_poly(prj, shp):
-            raise ValueError("Invalid unit or project polygon")
+        if not len(shp):
+            raise RuntimeError("No treatment units overlap lidar data.")
 
-        if len(allometry_coefficients) == 0:
-            self._tao_data.set_allometry(prj)
-        else:
-            self._tao_data.set_allometry(allometry_coefficients)
-        self._tao_data.doPreProcessing(prj)
-
-
-        units = [unit.intersection(prj) for unit in shp]
+        units = [unit for unit in shp]
         names = [unit['properties'][unit_name] if unit_name in unit['properties'] else None for unit in self._unit_poly]
-        self._units = [RxUnit(unit, self._unit_wkt, self._tao_data, name) for unit, name in zip(units, names) if unit.area != 0]
+        self._units = [RxUnit(unit, self._unit_wkt, self._tao_data, idx, name)
+                       for unit, name, idx in zip(units, names, range(len(units))) if unit.area != 0]
 
+    # get the data ready to save to disk.
     def prepToPickle(self):
         self._tao_data.prepToPickle()
 
+    # get the data rady to use when reading from disk.
     def dePickle(self, dll_path):
         self._tao_data.dePickle(dll_path)
+        self._tao_data.dll.setRxsSize.argtypes = [ctypes.c_int]
+        self._tao_data.dll.setRxsSize.restype = None
+        self._tao_data.dll.setRxsSize(len(self._units))
 
     def add_unit(self, new_rxunit):
         if not isinstance(new_rxunit, RxUnit):
@@ -113,18 +126,6 @@ class ProjectArea:
 
     def get_units(self):
         return self._units
-
-    def get_prj_poly(self):
-        return self._prj_poly
-
-    def set_prj_poly(self, new_prj_poly):
-        if isinstance(new_prj_poly, str):
-            with fiona.open(new_prj_poly, 'r') as shp:
-                self._prj_poly = list(shp)
-        elif isinstance(new_prj_poly, list):
-            self._prj_poly = new_prj_poly
-        else:
-            raise TypeError("new_prj_poly should be a string path to a shapefile or a list of features.")
 
     def get_tao_data(self):
         return self._tao_data
@@ -137,19 +138,7 @@ class ProjectArea:
         else:
             raise TypeError("new_lidar_data should be an object of type LidarDataset or a string path to a dataset")
 
-    # reprojection at some point?
-    # logic flow?
-    def validate_prj_poly(self, poly):
-        x = shapely.ops.unary_union([shapely.geometry.shape(feature['geometry']) for feature in self._tao_data.get_layout_poly()
-                                     if feature['geometry'] is not None]).buffer(0)
-
-        if not x.contains(poly) and not poly.equals(x):
-            print("prj shape is not within")
-            return False
-
-        return True
-
-    #duplicated code?
+    #unused code 10/2/24 - delete?
     def validate_unit_poly(self, prj, unit):
         if not len(self._unit_poly) > 0:
             print("unit len")
@@ -171,33 +160,23 @@ class ProjectArea:
         return True
 
 
-# TODO Let unit_poly be a path to a poly or a shapely shape
+# this class is stored in a list of other rxunits.  Each one represents a treatment area.
+# most of the communicating with the dll happens here.
 class RxUnit:
-    def __init__(self, unit_poly, unit_wkt, tao_data, name=None):
+    def __init__(self, unit_poly, unit_wkt, tao_data, idx, name=None):
+        self.idx = idx # for communicating with the dll which unit this is.
         print("Name: " + str(name) + " " + str(datetime.now()))
         self._unit_poly = self._validate_polygon(unit_poly)
         self._unit_wkt = unit_wkt
-        self._tao_data = tao_data
-        print(1)
-        self._tao_data.loadRx(unit_poly, unit_wkt)
-        print(2)
-        self._tao_points = self._tao_data.get_tao_points_dll()
-        print(3)
-        self._chm = self._tao_data.get_canopy_model_dll()
-        print(4)
-        self._max_height_map = self._tao_data.get_max_height_map_dll()
-        print(5)
-        #self._basin_map, self._basin_tiles = self._tao_data.get_basin_map()
-        self._basin_map = self._tao_data.get_basin_map_dll()
-        print(6)
+        self._tao_data = tao_data # so we can communicate with the dll.
+        self._tao_points = self.get_tao_points_dll()
+        self._chm = self.get_canopy_model_dll()
+        self._max_height_map = self.get_max_height_map_dll()
+        self._basin_map = self.get_basin_map_dll()
+        self._mask = self.get_mask_dll()
         self._hillshade = self._calculate_hillshade(self._chm)
-        print(7)
-        #self._master_nd = neardist.near_dist(self._tao_points[:, 1:3], 6)
-        #self._clump_sizes = self._get_raw_clumps(self._tao_points, nd=self._master_nd)
         self._clump_sizes = self._get_raw_clumps_dll()
-        print(8)
         self._clump_map = self._make_clump_map_dll(self._clump_sizes)
-        print(9)
         self._csd = self._get_csd(self._clump_sizes, group=True)
         self._current_structure = self.get_current_structure_dll()
         self._current_structure = self.get_current_structure_dll()
@@ -212,7 +191,6 @@ class RxUnit:
         self._treat_method = None
         self._treat_clump_sizes = None
         self._treat_clump_map = None
-        print(10)
         if name is not None:
             self._name = name
         else:
@@ -249,11 +227,11 @@ class RxUnit:
         self._target_structure[index] = value
 
     def set_target_structure_dll(self):
-        self._tao_data.dll.setTargetStructure.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
+        self._tao_data.dll.setTargetStructure.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
         self._tao_data.dll.setTargetStructure.restype = None
         bah = self._target_structure.ba / 4.356
         tph = self._target_structure.tpa * 2.47105
-        self._tao_data.dll.setTargetStructure(ctypes.c_double(bah), ctypes.c_double(tph),
+        self._tao_data.dll.setTargetStructure(ctypes.c_int(self.idx), ctypes.c_double(bah), ctypes.c_double(tph),
                                               ctypes.c_double(self._target_structure.mcs),
                                               ctypes.c_double(self._target_structure.osi),
                                               ctypes.c_double(self._target_structure.cc))
@@ -319,6 +297,136 @@ class RxUnit:
     def get_treat_clump_map(self):
         return self._treat_clump_map
 
+    def get_max_height_map_dll(self):
+        # Getting the raster metadata so we know what the dll will be sending us
+        self._tao_data.dll.getMhmMeta.argtypes = [ctypes.c_int,
+                                                  ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.c_char_p]
+        self._tao_data.dll.getMhmMeta.restype = None
+        nrow = ctypes.c_int(0)
+        ncol = ctypes.c_int(0)
+        xres = ctypes.c_double(0)
+        yres = ctypes.c_double(0)
+        xmin = ctypes.c_double(0)
+        ymin = ctypes.c_double(0)
+        crsWkt = ctypes.create_string_buffer(9999)
+        self._tao_data.dll.getMhmMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres),
+                                      ctypes.byref(yres), ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
+        crsWkt = crsWkt.value.decode("utf-8")
+
+        # getting the actual raster data.
+        self._tao_data.dll.getMhm.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self._tao_data.dll.getMhm.restype = None
+        data = np.ndarray((nrow.value, ncol.value), int)
+        self._tao_data.dll.getMhm(ctypes.c_int(self.idx), data, -9999999)
+
+
+        # creating a raster object using our custom python raster library.
+        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
+                          ymin.value + yres.value * nrow.value)
+        rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
+                             dataType=np.float64)
+        return rout
+
+    def get_basin_map_dll(self):
+        self._tao_data.dll.getBasinMeta.argtypes = [ctypes.c_int,
+                                                    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.c_char_p]
+        self._tao_data.dll.getBasinMeta.restype = None
+        nrow = ctypes.c_int(0)
+        ncol = ctypes.c_int(0)
+        xres = ctypes.c_double(0)
+        yres = ctypes.c_double(0)
+        xmin = ctypes.c_double(0)
+        ymin = ctypes.c_double(0)
+        crsWkt = ctypes.create_string_buffer(9999)
+        self._tao_data.dll.getBasinMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                        ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
+        crsWkt = crsWkt.value.decode("utf-8")
+
+        self._tao_data.dll.getBasin.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self._tao_data.dll.getBasin.restype = None
+        data = np.zeros((nrow.value, ncol.value), int)
+        self._tao_data.dll.getBasin(ctypes.c_int(self.idx), data, -9999999)
+        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
+                          ymin.value + yres.value * nrow.value)
+        rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
+                             dataType=np.float64)
+        return rout
+
+    def get_canopy_model_dll(self):
+        self._tao_data.dll.getChmMeta.argtypes = [ctypes.c_int,
+                                                  ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.c_char_p]
+        self._tao_data.dll.getChmMeta.restype = None
+        nrow = ctypes.c_int(0)
+        ncol = ctypes.c_int(0)
+        xres = ctypes.c_double(0)
+        yres = ctypes.c_double(0)
+        xmin = ctypes.c_double(0)
+        ymin = ctypes.c_double(0)
+        crsWkt = ctypes.create_string_buffer(9999)
+        self._tao_data.dll.getChmMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                      ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
+        crsWkt = crsWkt.value.decode("utf-8")
+
+        self._tao_data.dll.getChm.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS"), ctypes.c_double]
+        self._tao_data.dll.getChm.restype = None
+        data = np.empty(shape=(nrow.value, ncol.value), dtype=np.float64)
+        self._tao_data.dll.getChm(ctypes.c_int(self.idx), data, ctypes.c_double(-9999999))
+
+        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
+                          ymin.value + yres.value * nrow.value)
+        r = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
+                          dataType=np.float64)
+        return r
+
+    def get_tao_points_dll(self):
+        self._tao_data.dll.nTaos.argtypes = [ctypes.c_int]
+        self._tao_data.dll.nTaos.restype = int
+        x = self._tao_data.dll.nTaos(self.idx)
+
+        self._tao_data.dll.getTaos.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getTaos.restype = None
+        taos = np.empty(shape=(x, 5), dtype=np.float64)
+        self._tao_data.dll.getTaos(self.idx, taos)
+        return taos
+
+    def get_mask_dll(self):
+        self._tao_data.dll.getMaskMeta.argtypes = [ctypes.c_int,
+                                                    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.c_char_p]
+        self._tao_data.dll.getMaskMeta.restype = None
+        nrow = ctypes.c_int(0)
+        ncol = ctypes.c_int(0)
+        xres = ctypes.c_double(0)
+        yres = ctypes.c_double(0)
+        xmin = ctypes.c_double(0)
+        ymin = ctypes.c_double(0)
+        crsWkt = ctypes.create_string_buffer(9999)
+        self._tao_data.dll.getMaskMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                        ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
+        crsWkt = crsWkt.value.decode("utf-8")
+
+        self._tao_data.dll.getMask.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self._tao_data.dll.getMask.restype = None
+        data = np.zeros((nrow.value, ncol.value), int)
+        self._tao_data.dll.getMask(ctypes.c_int(self.idx), data, -9999999)
+        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
+                          ymin.value + yres.value * nrow.value)
+        rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
+                             dataType=np.float64)
+        return rout
+
+    # This is so the trees can be shaded in the display of the rxunit.
     def _calculate_hillshade(self, grid, dx=None, az=315, elev=45):
         if dx is None:
             dx = grid.res
@@ -341,6 +449,8 @@ class RxUnit:
 
         return sx, sy
 
+    # To be honest I copied this code off stackoverflow years ago and don't know exactly how this works
+    # but it creates the hillshade.
     @staticmethod
     def _assign_bcs(grid):
         try:
@@ -360,10 +470,10 @@ class RxUnit:
         return zbc
 
     def _get_raw_clumps_dll(self):
-        self._tao_data.dll.getRawClumps.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getRawClumps.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS")]
         self._tao_data.dll.getRawClumps.restype = None
         cl = np.empty(shape=(self._tao_points.shape[0]), dtype=int)
-        self._tao_data.dll.getRawClumps(cl)
+        self._tao_data.dll.getRawClumps(ctypes.c_int(self.idx), cl)
         return cl
 
     # Convert raw clumps into a record array. 1 row per clump.
@@ -402,8 +512,9 @@ class RxUnit:
 
     def _make_clump_map_dll(self, group_sizes):
         group_sizes = self._convert_to_clump_sizes(group_sizes)
-        self._tao_data.dll.makeClumpMap.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self._tao_data.dll.makeClumpMaprestype = None
+        self._tao_data.dll.makeClumpMap.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                    np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self._tao_data.dll.makeClumpMap.restype = None
 
         nrow = ctypes.c_int(0)
         ncol = ctypes.c_int(0)
@@ -412,13 +523,13 @@ class RxUnit:
         xmin = ctypes.c_double(0)
         ymin = ctypes.c_double(0)
         crsWkt = ctypes.create_string_buffer(9999)
-        self._tao_data.dll.getBasinMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                              ctypes.byref(xmin),
-                              ctypes.byref(ymin), crsWkt)
+        self._tao_data.dll.getBasinMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                        ctypes.byref(xres), ctypes.byref(yres),
+                                        ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
         crsWkt = crsWkt.value.decode("utf-8")
 
         data = np.zeros((nrow.value, ncol.value), int)
-        self._tao_data.dll.makeClumpMap(group_sizes.astype(int), data, -9999999)
+        self._tao_data.dll.makeClumpMap(ctypes.c_int(self.idx), group_sizes.astype(int), data, -9999999)
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
@@ -426,7 +537,7 @@ class RxUnit:
         return rout
 
     def get_current_structure_dll(self):
-        self._tao_data.dll.getCurrentStructure.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+        self._tao_data.dll.getCurrentStructure.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double)]
         self._tao_data.dll.getCurrentStructure.restypes = None
@@ -435,25 +546,25 @@ class RxUnit:
         mcs = ctypes.c_double(0)
         osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
-        self._tao_data.dll.getCurrentStructure(ctypes.byref(bah), ctypes.byref(tph), ctypes.byref(mcs), ctypes.byref(osi),
-                                               ctypes.byref(cc))
+        self._tao_data.dll.getCurrentStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
+                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
         return x
 
     def get_treated_structure_dll(self):
-        self._tao_data.dll.getTreatedStructure.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+        self._tao_data.dll.getTreatedStructure.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                                           ctypes.POINTER(ctypes.c_double)]
+                                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
         self._tao_data.dll.getTreatedStructure.restypes = None
         bah = ctypes.c_double(0)
         tph = ctypes.c_double(0)
         mcs = ctypes.c_double(0)
         osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
-        self._tao_data.dll.getTreatedStructure(ctypes.byref(bah), ctypes.byref(tph), ctypes.byref(mcs), ctypes.byref(osi),
-                                               ctypes.byref(cc))
+        self._tao_data.dll.getTreatedStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
+                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
@@ -461,10 +572,10 @@ class RxUnit:
 
     def get_simulated_structures_dll(self, bb_dbh=30):
         bb_dbh *= 2.54
-        self._tao_data.dll.getSimulatedStructures.argtypes = [ctypes.c_double, np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getSimulatedStructures.argtypes = [ctypes.c_int, ctypes.c_double, np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
         self._tao_data.dll.getSimulatedStructures.restype = None
         data = np.empty(31*5, ctypes.c_double)
-        self._tao_data.dll.getSimulatedStructures(ctypes.c_double(bb_dbh), data)
+        self._tao_data.dll.getSimulatedStructures(ctypes.c_int(self.idx), ctypes.c_double(bb_dbh), data)
         out = []
         for i in range(0, 31, 1):
             baa = copy.deepcopy(data[i*5] * 4.356)
@@ -483,11 +594,11 @@ class RxUnit:
         return 0.005454 * (dbh / 2.54)**2
 
     def get_treatment_dll(self, dbhMin, dbhMax):
-        self.set_target_structure_dll();
+        self.set_target_structure_dll()
 
-        self._tao_data.dll.doTreatment.argtypes = [ctypes.c_double, ctypes.c_double]
+        self._tao_data.dll.doTreatment.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double]
         self._tao_data.dll.doTreatment.restype = None
-        self._tao_data.dll.doTreatment(ctypes.c_double(dbhMin*2.54), ctypes.c_double(dbhMax*2.54))
+        self._tao_data.dll.doTreatment(ctypes.c_int(self.idx), ctypes.c_double(dbhMin*2.54), ctypes.c_double(dbhMax*2.54))
 
         self._treat_chm = self.get_treat_chm_dll()
         self._treat_basin = self.get_treat_basin_dll()
@@ -508,10 +619,10 @@ class RxUnit:
         return self._treat_best_struct
 
     def get_treat_basin_dll(self):
-        self._tao_data.dll.getBasinMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                          ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                          ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                          ctypes.c_char_p]
+        self._tao_data.dll.getBasinMeta.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int),
+                                                    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                    ctypes.POINTER(ctypes.c_double), ctypes.c_char_p]
         self._tao_data.dll.getBasinMeta.restype = None
         nrow = ctypes.c_int(0)
         ncol = ctypes.c_int(0)
@@ -520,15 +631,15 @@ class RxUnit:
         xmin = ctypes.c_double(0)
         ymin = ctypes.c_double(0)
         crsWkt = ctypes.create_string_buffer(9999)
-        self._tao_data.dll.getBasinMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                              ctypes.byref(xmin),
-                              ctypes.byref(ymin), crsWkt)
+        self._tao_data.dll.getBasinMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                        ctypes.byref(xres), ctypes.byref(yres),
+                                        ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
         crsWkt = crsWkt.value.decode("utf-8")
 
-        self._tao_data.dll.getTreatedBasin.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self._tao_data.dll.getTreatedBasin.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
         self._tao_data.dll.getTreatedBasin.restype = None
         data = np.zeros((nrow.value, ncol.value), int)
-        self._tao_data.dll.getTreatedBasin(data, -9999999)
+        self._tao_data.dll.getTreatedBasin(ctypes.c_int(self.idx), data, -9999999)
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
@@ -536,10 +647,10 @@ class RxUnit:
         return rout
 
     def get_treat_chm_dll(self):
-        self._tao_data.dll.getChmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.c_char_p]
+        self._tao_data.dll.getChmMeta.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int),
+                                                  ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
+                                                  ctypes.POINTER(ctypes.c_double), ctypes.c_char_p]
         self._tao_data.dll.getChmMeta.restype = None
         nrow = ctypes.c_int(0)
         ncol = ctypes.c_int(0)
@@ -548,14 +659,15 @@ class RxUnit:
         xmin = ctypes.c_double(0)
         ymin = ctypes.c_double(0)
         crsWkt = ctypes.create_string_buffer(9999)
-        self._tao_data.dll.getChmMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin),
-                     ctypes.byref(ymin), crsWkt)
+        self._tao_data.dll.getChmMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                      ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin), ctypes.byref(ymin),
+                                      crsWkt)
         crsWkt = crsWkt.value.decode("utf-8")
 
-        self._tao_data.dll.getTreatedChm.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS"), ctypes.c_double]
+        self._tao_data.dll.getTreatedChm.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS"), ctypes.c_double]
         self._tao_data.dll.getTreatedChm.restype = None
         data = np.empty(shape=(nrow.value, ncol.value), dtype=np.float64)
-        self._tao_data.dll.getTreatedChm(data, ctypes.c_double(-9999999))
+        self._tao_data.dll.getTreatedChm(ctypes.c_int(self.idx), data, ctypes.c_double(-9999999))
 
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
@@ -564,7 +676,8 @@ class RxUnit:
         return r
 
     def get_treat_structure_dll(self):
-        self._tao_data.dll.getTreatedStructure.argtypes = [ctypes.POINTER(ctypes.c_double),
+        self._tao_data.dll.getTreatedStructure.argtypes = [ctypes.c_int,
+                                                           ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double),
@@ -575,39 +688,39 @@ class RxUnit:
         mcs = ctypes.c_double(0)
         osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
-        self._tao_data.dll.getTreatedStructure(ctypes.byref(bah), ctypes.byref(tph), ctypes.byref(mcs),
-                                               ctypes.byref(osi), ctypes.byref(cc))
+        self._tao_data.dll.getTreatedStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
+                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
         return x
 
     def get_treat_taos_dll(self):
-        self._tao_data.dll.getNTreatedTaos.argtypes = []
+        self._tao_data.dll.getNTreatedTaos.argtypes = [ctypes.c_int]
         self._tao_data.dll.getNTreatedTaos.restype = int
-        x = self._tao_data.dll.getNTreatedTaos()
+        x = self._tao_data.dll.getNTreatedTaos(ctypes.c_int(self.idx))
 
-        self._tao_data.dll.getTreatedTaos.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getTreatedTaos.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
         self._tao_data.dll.getTreatedTaos.restype = None
         taos = np.empty(shape=(x, 5), dtype=np.float64)
-        self._tao_data.dll.getTreatedTaos(taos)
+        self._tao_data.dll.getTreatedTaos(ctypes.c_int(self.idx), taos)
         return taos
 
     def get_treat_raw_clumps_dll(self):
-        self._tao_data.dll.getTreatedRawClumps.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getTreatedRawClumps.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS")]
         self._tao_data.dll.getTreatedRawClumps.restype = None
         cl = np.empty(shape=(self._tao_points.shape[0]), dtype=int)
-        self._tao_data.dll.getTreatedRawClumps(cl)
+        self._tao_data.dll.getTreatedRawClumps(ctypes.c_int(self.idx), cl)
         return cl
 
     def get_treat_clump_map_dll(self, group_sizes):
         group_sizes = self._convert_to_clump_sizes(group_sizes)
-        print(group_sizes[0:5])
-        self._tao_data.dll.getTreatedClumpMap.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                           ctypes.c_int,
-                                                           np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                           np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                           ctypes.c_int]
+        self._tao_data.dll.getTreatedClumpMap.argtypes = [ctypes.c_int,
+                                                          np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                          ctypes.c_int,
+                                                          np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                          np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                          ctypes.c_int]
         self._tao_data.dll.getTreatedClumpMap.restype = None
 
         nrow = ctypes.c_int(0)
@@ -617,14 +730,14 @@ class RxUnit:
         xmin = ctypes.c_double(0)
         ymin = ctypes.c_double(0)
         crsWkt = ctypes.create_string_buffer(9999)
-        self._tao_data.dll.getBasinMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                              ctypes.byref(xmin),
-                              ctypes.byref(ymin), crsWkt)
+        self._tao_data.dll.getBasinMeta(ctypes.c_int(self.idx), ctypes.byref(nrow), ctypes.byref(ncol),
+                                        ctypes.byref(xres), ctypes.byref(yres),
+                                        ctypes.byref(xmin), ctypes.byref(ymin), crsWkt)
         crsWkt = crsWkt.value.decode("utf-8")
 
         data = np.zeros((nrow.value, ncol.value), int)
-        self._tao_data.dll.getTreatedClumpMap(self._treat_basin.values.astype(int), -9999999, group_sizes.astype(int),
-                                              data, -9999999)
+        self._tao_data.dll.getTreatedClumpMap(ctypes.c_int(self.idx), self._treat_basin.values.astype(int), -9999999,
+                                              group_sizes.astype(int), data, -9999999)
         e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
                           ymin.value + yres.value * nrow.value)
         rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
@@ -707,8 +820,11 @@ class LidarDataset:
         self._root_path = path
 
         lapis = False
-        if any("Layout" == f for f in os.listdir(path)):
+        lidR = False
+        if "Layout" in os.listdir(path):
             lapis = True
+        if "layout" in os.listdir(path):
+            lidR = True
 
         if lapis:
             f = os.listdir(os.path.join(path, "TreeApproximateObjects"))[0]
@@ -716,6 +832,9 @@ class LidarDataset:
                 self.set_units("feet")
             else:
                 self.set_units("meters")
+        elif lidR:
+            #TODO: UNITS!
+            self.set_units("meters")
         else:
             if any("FEET" in f for f in os.listdir(path)):
                 self.set_units("feet")
@@ -726,6 +845,10 @@ class LidarDataset:
             layout_poly_path = [f for f in os.listdir(os.path.join(path, "Layout"))
                                 if f.endswith(".shp")][0]
             self.set_layout_poly(os.path.join(path, "Layout", layout_poly_path))
+        elif lidR:
+            layout_poly_path = [f for f in os.listdir(os.path.join(path, "layout"))
+                                if f.endswith(".shp")][0]
+            self.set_layout_poly(os.path.join(path, "layout", layout_poly_path))
         else:
             layout_poly_path = [f for f in os.listdir(os.path.join(path, "Layout_shapefiles"))
                                 if f.endswith('ProcessingTiles.shp')][0]
@@ -747,135 +870,18 @@ class LidarDataset:
         print("init done")
 
     def prepToPickle(self):
-        out = DllStorage()
-
-        self.dll.getBigMhmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                        ctypes.c_char_p]
-        self.dll.getBigMhmMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getBigMhmMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                            ctypes.byref(xmin),
-                            ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getBigMhm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self.dll.getBigMhm.restype = None
-        data = np.ndarray((nrow.value, ncol.value), int)
-        self.dll.getBigMhm(data, -9999999)
-
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        out.bigmhm = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=np.float64)
-
-        self.dll.getBigChmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                        ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                        ctypes.c_char_p]
-        self.dll.getBigChmMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getBigChmMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                            ctypes.byref(xmin),
-                            ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getBigChm.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS"), ctypes.c_double]
-        self.dll.getBigChm.restype = None
-        data = np.empty(shape=(nrow.value, ncol.value), dtype=np.float64)
-        self.dll.getBigChm(data, ctypes.c_double(-9999999))
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        out.bigchm = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                                   dataType=np.float64)
-
-        self.dll.getBigBasinMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                          ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                          ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                          ctypes.c_char_p]
-        self.dll.getBigBasinMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getBigBasinMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                              ctypes.byref(xmin),
-                              ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getBigBasin.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self.dll.getBigBasin.restype = None
-        data = np.zeros((nrow.value, ncol.value), int)
-        self.dll.getBigBasin(data, -9999999)
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        out.bigbasin = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=np.float64)
-
-        self.dll.getMaskMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                             ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                             ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                             ctypes.c_char_p]
-        self.dll.getMaskMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getMaskMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres),
-                                 ctypes.byref(xmin),
-                                 ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getMask.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self.dll.getMask.restype = None
-        data = np.zeros((nrow.value, ncol.value), int)
-        self.dll.getMask(data, -9999999)
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        out.mask = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                                     dataType=np.float64)
-
-        self.dll.nBigTaos.argtypes = []
-        self.dll.nBigTaos.restype = int
-        x = self.dll.nBigTaos()
-
-        self.dll.getBigTaos.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
-        self.dll.getBigTaos.restype = None
-        taos = np.empty(shape=(x, 5), dtype=np.float64)
-        self.dll.getBigTaos(taos)
-        out.bigtaos = taos
-
         self.dll.getConvFactor.argtypes = [ctypes.POINTER(ctypes.c_double)]
         self.dll.getConvFactor.restype = None
         convFactor = ctypes.c_double(0)
         self.dll.getConvFactor(ctypes.byref(convFactor))
-        out.convFactor = convFactor.value
+        cf = convFactor.value
 
-        self.dll = out
+        self.dll = cf
         print("prepped to pickle")
 
     def dePickle(self, dll_path):
-        if isinstance(self.dll, DllStorage):
-            tmp = self.dll
+        if isinstance(self.dll, float):
+            cf = self.dll
             self.dll = ctypes.CDLL(dll_path)
             self._dll_path = dll_path
             self.dll.setSeed.restype = None
@@ -891,65 +897,33 @@ class LidarDataset:
             self.dll.initLidarDataset.restype = None
             self.dll.initLidarDataset(b_root_path)
 
-            self.dll.setBigChm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
-                                        ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
-                                        ctypes.c_double, ctypes.c_char_p]
-            self.dll.setBigChm.restype = None
-            r = tmp.bigchm
-            crsWkt = r.projection
-            crsWkt = crsWkt.encode('utf-8')
-            self.dll.setBigChm(r.values, r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, ctypes.c_double(-9999999), crsWkt)
-
-            self.dll.setBigBasin.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                                          ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
-                                          ctypes.c_int, ctypes.c_char_p]
-            self.dll.setBigBasin.restype = None
-            r = tmp.bigbasin
-            crsWkt = r.projection
-            crsWkt = crsWkt.encode('utf-8')
-            self.dll.setBigBasin(r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
-
-            self.dll.setBigMhm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                                             ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
-                                             ctypes.c_double,
-                                             ctypes.c_int, ctypes.c_char_p]
-            self.dll.setBigMhm.restype = None
-            r = tmp.bigmhm
-            crsWkt = r.projection
-            crsWkt = crsWkt.encode('utf-8')
-            self.dll.setBigMhm(r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
-
-            self.dll.setMask.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                                           ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
-                                           ctypes.c_double,
-                                           ctypes.c_int, ctypes.c_char_p]
-            self.dll.setMask.restype = None
-            r = tmp.mask
-            crsWkt = r.projection
-            crsWkt = crsWkt.encode('utf-8')
-            self.dll.setMask(r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
-
             self.dll.setConvFactor.argtypes = [ctypes.c_double]
             self.dll.setConvFactor.restype = None
-            self.dll.setConvFactor(tmp.convFactor)
-
-
-            self.dll.setBigTaos.argtypes = [np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
-            self.dll.setBigTaos.restype = None
-            self.dll.setBigTaos(tmp.bigtaos, tmp.bigtaos.size)
+            self.dll.setConvFactor(cf)
 
             self.set_allometry(self._allometry)
             print("depickled")
 
-    def doPreProcessing(self, projPoly):
-        self.dll.doPreProcessing.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
-        self.dll.doPreProcessing.restype = None
+    def doPreProcessing(self, projPoly, nthreads):
+        self.dll.queueRx.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+        self.dll.queueRx.restype = ctypes.c_bool
         crsWkt = self._wkt
-        print("dopreprocessing")
-        wkt = shapely.wkt.dumps(projPoly)
         crsWkt = crsWkt.encode('utf-8')
-        wkt = wkt.encode('utf-8')
-        self.dll.doPreProcessing(wkt, crsWkt, 5)
+
+        result = []
+        print("projpoly")
+        print(len(projPoly))
+        for shp in projPoly:
+            wkt = shapely.wkt.dumps(shp)
+            wkt = wkt.encode('utf-8')
+            result.append(self.dll.queueRx(wkt, crsWkt))
+
+        self.dll.doPreProcessing.argtypes = [ctypes.c_int]
+        self.dll.doPreProcessing.restype = None
+        print("dopreprocessing")
+
+        self.dll.doPreProcessing(nthreads)
+        return [shp for shp, res in zip(projPoly, result) if res]
 
     def reprojectPolygon(self, poly, crsWkt):
         self.dll.reprojectPolygon.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
@@ -963,52 +937,51 @@ class LidarDataset:
         self.dll.reprojectPolygon(wkt, crsWkt, outWkt)
         outWkt = outWkt.value.decode("utf-8")
         return shapely.wkt.loads(outWkt)
-
-
-    def loadRx(self, poly, wkt):
-        self.dll.loadRx.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-        self.dll.loadRx.restype = None
-        crsWkt = wkt
-        wkt = shapely.wkt.dumps(poly)
-        crsWkt = crsWkt.encode('utf-8')
-        wkt = wkt.encode('utf-8')
-        self.dll.loadRx(wkt, crsWkt)
-
     def exportRxToDll(self, rx):
-        self.dll.setMhm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
+        self.dll.setMhm.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
                                     ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
                                     ctypes.c_int, ctypes.c_char_p]
         self.dll.setMhm.restype = None
         r = rx._max_height_map
         crsWkt = r.projection
         crsWkt = crsWkt.encode('utf-8')
-        self.dll.setMhm(r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
-        print(1)
-        self.dll.setBasin.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
+        self.dll.setMhm(rx.idx, r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
+
+        self.dll.setBasin.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
                                       ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
                                       ctypes.c_int, ctypes.c_char_p]
         self.dll.setBasin.restype = None
         r = rx._basin_map
         crsWkt = r.projection
         crsWkt = crsWkt.encode('utf-8')
-        self.dll.setBasin(r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
-        print(2)
+        self.dll.setBasin(rx.idx, r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
 
-        self.dll.setChm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
+        self.dll.setChm.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
                                     ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
                                     ctypes.c_double, ctypes.c_char_p]
         self.dll.setChm.restype = None
         r = rx._chm
         crsWkt = r.projection
         crsWkt = crsWkt.encode('utf-8')
-        self.dll.setChm(r.values, r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, ctypes.c_double(-9999999), crsWkt)
-        print(3)
+        self.dll.setChm(rx.idx, r.values, r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, ctypes.c_double(-9999999), crsWkt)
 
-        self.dll.importRx.argtypes = [np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
-                                      ctypes.c_double]
-        self.dll.importRx.restype = None
-        self.dll.importRx(rx._tao_points, rx._tao_points.size, ctypes.c_double(rx._current_structure.osi))
-        print(4)
+        self.dll.setMask.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                                    ctypes.c_double, ctypes.c_char_p]
+        self.dll.setMask.restype = None
+        r = rx._mask
+        crsWkt = r.projection
+        crsWkt = crsWkt.encode('utf-8')
+        self.dll.setMask(rx.idx, r.values.astype(int), r.nrow, r.ncol, r.xres, r.yres, r.xmin, r.ymin, -9999999, crsWkt)
+
+        self.dll.setTaos.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+        self.dll.setTaos.restype = None
+        self.dll.setTaos(rx.idx, rx._tao_points, rx._tao_points.shape[0])
+        print("Rxunit" + str(rx.idx))
+        print(rx._tao_points.shape[0])
+        self.dll.calcCurrentStructure.argtypes = [ctypes.c_int]
+        self.dll.calcCurrentStructure.restype = None
+        self.dll.calcCurrentStructure(rx.idx)
 
     def get_units(self):
         return self._units
@@ -1060,6 +1033,7 @@ class LidarDataset:
             self.dll.setAllometryWkt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
             self.dll.setAllometryWkt.restype = None
             crsWkt = self.get_wkt()
+            print(a)
             wkt = shapely.wkt.dumps(a)
             crsWkt = crsWkt.encode('utf-8')
             wkt = wkt.encode('utf-8')
@@ -1079,102 +1053,6 @@ class LidarDataset:
         except BaseException as e:
             print(traceback.format_exc())
             raise ValueError("Provide an Allometry object or a wkt to project area")
-
-
-    def get_max_height_map_dll(self):
-        self.dll.getMhmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.c_char_p]
-        self.dll.getMhmMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getMhmMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin),
-                     ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getMhm.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self.dll.getMhm.restype = None
-        data = np.ndarray((nrow.value, ncol.value), int)
-        self.dll.getMhm(data, -9999999)
-
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=np.float64)
-        return rout
-
-    def get_basin_map_dll(self):
-        self.dll.getBasinMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.c_char_p]
-        self.dll.getBasinMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getBasinMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin),
-                     ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getBasin.argtypes = [np.ctypeslib.ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
-        self.dll.getBasin.restype = None
-        data = np.zeros((nrow.value, ncol.value), int)
-        self.dll.getBasin(data, -9999999)
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        rout = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                             dataType=np.float64)
-        return rout
-
-    def get_canopy_model_dll(self):
-        self.dll.getChmMeta.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                 ctypes.c_char_p]
-        self.dll.getChmMeta.restype = None
-        nrow = ctypes.c_int(0)
-        ncol = ctypes.c_int(0)
-        xres = ctypes.c_double(0)
-        yres = ctypes.c_double(0)
-        xmin = ctypes.c_double(0)
-        ymin = ctypes.c_double(0)
-        crsWkt = ctypes.create_string_buffer(9999)
-        self.dll.getChmMeta(ctypes.byref(nrow), ctypes.byref(ncol), ctypes.byref(xres), ctypes.byref(yres), ctypes.byref(xmin),
-                     ctypes.byref(ymin), crsWkt)
-        crsWkt = crsWkt.value.decode("utf-8")
-
-        self.dll.getChm.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS"), ctypes.c_double]
-        self.dll.getChm.restype = None
-        data = np.empty(shape=(nrow.value, ncol.value), dtype=np.float64)
-        self.dll.getChm(data, ctypes.c_double(-9999999))
-
-        e = raster.Extent(xmin.value, xmin.value + xres.value * ncol.value, ymin.value,
-                          ymin.value + yres.value * nrow.value)
-        r = raster.Raster(e, [xres.value, yres.value], ncol.value, nrow.value, crsWkt, data=data,
-                          dataType=np.float64)
-        return r
-
-    def get_tao_points_dll(self):
-        self.dll.nCurrentTaos.argtypes = []
-        self.dll.nCurrentTaos.restype = int
-        x = self.dll.nCurrentTaos()
-
-        self.dll.getCurrentTaos.argtypes = [np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
-        self.dll.getCurrentTaos.restype = None
-        taos = np.empty(shape=(x, 5), dtype=np.float64)
-        self.dll.getCurrentTaos(taos)
-        return taos
-
 
 class Allometry:
     def __init__(self):
@@ -1243,17 +1121,3 @@ class StructureSummary:
     @property
     def cc(self):
         return self._data[4]
-
-
-class DllStorage:
-    def __init__(self):
-        self.lidarDatasetPath = None
-        self.allometry = None
-        self.bigmhm = None
-        self.bigchm = None
-        self.bigosinum = None
-        self.bigosiden = None
-        self.bigbasin = None
-        self.bigtaos = None
-        self.mask = None
-        self.convFactor = None

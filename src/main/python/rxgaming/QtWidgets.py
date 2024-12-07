@@ -1,4 +1,15 @@
-"""Extensions and additions to PyQt5.QtWidgets for the RxGaming tool.
+"""
+    Copyright (C) 2024  University of Washington
+    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
+
+Bryce Bartl-Geller
+University of Washington Forest Resilience Lab
+12/6/2024
+
+QtWidgets.py
+Extensions and additions to PyQt5.QtWidgets for the RxGaming tool.
 
 This is a collection of generally unrelated widgets and widget helpers. They all extend PyQt
 in some way and act like Qt elements, so they are here together.

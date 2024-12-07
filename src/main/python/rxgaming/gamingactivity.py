@@ -1,3 +1,17 @@
+"""
+    Copyright (C) 2024  University of Washington
+    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
+
+Bryce Bartl-Geller
+University of Washington Forest Resilience Lab
+12/6/2024
+
+gamingactivity.py
+This file is the UI for the "gaming" side of the tool, after project settings processing has been completed.
+"""
+
 # General
 import numpy as np
 import os
@@ -7,10 +21,10 @@ from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton,
                              QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QAction, QApplication,
                              QMessageBox)
 from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QModelIndex
+from PyQt5 import QtPrintSupport, QtGui
 
 # RxGaming
 from activity import Activity, SaveStateActivity
-from projectsettings import DllStorage
 from QtWidgets import SliderWithValue, QMainWindowRx  # custom widgets
 
 # IO
@@ -35,14 +49,14 @@ import matplotlib.ticker as ticker  # custom axis ticks
 from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm  # coloring the displayed raster
 from scipy.spatial import ConvexHull  # polygons on reference plots
 from scipy.stats import gaussian_kde  # report pages
-import seaborn
+import seaborn # reference 2d KDE plots
 
 
 # GamingActivity class
 # Handles user input and interactions with the projectsettings and surfaces data and treatment results
 class GamingActivity(Activity):
     def on_start(self, saved_state, **kwargs):
-        self.dll_path = kwargs['dll_path']
+        self.dll_path = kwargs['dll_path']  #find the link to the dll that does the treatment operations
         # Set up the mainwindow
         self.set_window(QMainWindowRx())
         self.central_widget = QWidget()
@@ -60,7 +74,7 @@ class GamingActivity(Activity):
         self.window.setMinimumSize(1800, 1000)
         self.window.showMaximized()
 
-        # Set ups the menu bar
+        # Set up the menu bar
         self.save_action = QAction("&Save")
         self.save_action.setShortcut("Ctrl+S")
         self.save_action.triggered.connect(self.menu_save)
@@ -85,12 +99,20 @@ class GamingActivity(Activity):
         self.export_treelists_action = QAction("&Export treelists (\".csv\")")
         self.export_treelists_action.triggered.connect(self.export_treelists)
 
+        self.print_action = QAction("&Print")
+        self.print_action.triggered.connect(self.print)
+
+        self.license_action = QAction("&License")
+        self.print_action.triggered.connect(self.license)
+
         self.main_menu = self.window.menuBar()
         self.file_menu = self.main_menu.addMenu("File")
         self.export_menu = self.file_menu.addMenu("Export")
+        #self.file_menu.addAction(self.print_action)
 
         self.file_menu.addAction(self.save_action)
         self.file_menu.addAction(self.save_as_action)
+        self.file_menu.addAction(self.license_action)
         self.file_menu.addAction(self.exit_action)
 
         self.export_menu.addAction(self.export_rasters_action)
@@ -116,6 +138,7 @@ class GamingActivity(Activity):
         saved_state['GamingActivity.tabs.model_index_row'] = self.tab_widget.stand_tab_list_view.currentIndex().row()
         saved_state['GamingActivity.tabs.viewmode'] = self.tab_widget.raster_viewmode.currentIndex()
         saved_state['GamingActivity.tabs.treatmethod'] = self.tab_widget.treatment_method.currentIndex()
+        saved_state['GamingActivity.tabs.cut_range'] = self.tab_widget.cut_range.value()
         saved_state['LastActivity'] = type(self)
         if 'save_file_location' in self.saved_state:
             saved_state['save_file_location'] = self.saved_state['save_file_location']
@@ -171,11 +194,30 @@ class GamingActivity(Activity):
     def export_treelists(self):
         self.tab_widget.export_treelist()
 
+    def print(self):
+        self.tab_widget.print()
+
+    @staticmethod
+    def license():
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("""
+            Copyright (C) 2024  University of Washington\n
+            This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n
+            This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+            You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.\n
+            """)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+
+# The majority of the UI sits inside these tabs.
 class Tabs(QTabWidget):
     def __init__(self, saved_state, dll_path):
         super(Tabs, self).__init__(None)
         self.layout = QVBoxLayout()
 
+        # Rx decision space polygons will be held here eventually
         self.decision_spaces = []
 
         # Initialize tabs
@@ -207,6 +249,7 @@ class Tabs(QTabWidget):
         self.stand_tab_left_layout.addWidget(self.stand_tab_info_widget)
 
         # Set up treatment report widgets figures.
+        #    these are various labels needed.
         self.report_label = QLabel("Treatment Report")
         self.current_label = QLabel("Current")
         self.displayed_label = QLabel("Post-Treatment")
@@ -215,18 +258,24 @@ class Tabs(QTabWidget):
         self.current_label.setStyleSheet('font: 16pt;')
         self.displayed_label.setStyleSheet('font: 16pt;')
         self.target_label.setStyleSheet('font: 16pt;')
+
+        #  These are the kernel density estimates that show info about the selected stand.
         self.current_fig_ba = Figure()
         self.current_canvas_ba = FigureCanvas(self.current_fig_ba)
         self.report_current_ax_ba = self.current_fig_ba.add_subplot(111, position=[0.15, 0.15, 0.75, 0.75])
+        self.current_fig_ba.subplots_adjust(left=0.1, right=0.97, top=.85, bottom=0.25)
         self.current_fig_mcs = Figure()
         self.current_canvas_mcs = FigureCanvas(self.current_fig_mcs)
         self.report_current_ax_mcs = self.current_fig_mcs.add_subplot(111, position=[0.15, 0.15, 0.75, 0.75])
+        self.current_fig_mcs.subplots_adjust(left=0.1, right=0.97, top=.85, bottom=0.25)
         self.displayed_fig_ba = Figure()
         self.displayed_canvas_ba = FigureCanvas(self.displayed_fig_ba)
         self.displayed_ax_ba = self.displayed_fig_ba.add_subplot(111, position=[0.15, 0.15, 0.75, 0.75])
+        self.displayed_fig_ba.subplots_adjust(left=0.1, right=0.97, top=.85, bottom=0.25)
         self.displayed_fig_mcs = Figure()
         self.displayed_canvas_mcs = FigureCanvas(self.displayed_fig_mcs)
         self.displayed_ax_mcs = self.displayed_fig_mcs.add_subplot(111, position=[0.15, 0.15, 0.75, 0.75])
+        self.displayed_fig_mcs.subplots_adjust(left=0.1, right=0.97, top=.85, bottom=0.25)
         self.displayed_mcs_prop = QLabel("")
         self.displayed_mcs_prop.setStyleSheet('font: 16pt;')
 
@@ -236,6 +285,7 @@ class Tabs(QTabWidget):
         self.treat_display_layout = QGridLayout()
         self.treat_display.setLayout(self.treat_display_layout)
 
+        # Put the previously created widgets in to one layout to be displayed together.
         self.treat_display_layout.addWidget(self.report_label, 0, 1)
         self.treat_display_layout.addWidget(self.current_label, 1, 0)
         self.treat_display_layout.addWidget(self.displayed_label, 2, 0)
@@ -245,6 +295,12 @@ class Tabs(QTabWidget):
         self.treat_display_layout.addWidget(self.displayed_mcs_prop, 3, 2)
         self.treat_display_layout.addWidget(self.current_canvas_mcs, 1, 2)
         self.treat_display_layout.addWidget(self.displayed_canvas_mcs, 2, 2)
+        self.treat_display_layout.setRowStretch(0, 0)
+        self.treat_display_layout.setRowStretch(1, 2)
+        self.treat_display_layout.setRowStretch(2, 2)
+        self.treat_display_layout.setRowStretch(3, 1)
+        self.displayed_mcs_prop.setMinimumHeight(10)
+        self.displayed_canvas_mcs.setMinimumHeight(10)
 
         # set up cut trees report window
         self.cut_trees_page_label = QLabel("Cut trees info")
@@ -297,6 +353,7 @@ class Tabs(QTabWidget):
 
         self.treatment_method = QComboBox()
         self.treatment_method.addItems(["Add Clumps", 'DBH Thin', "Sum Squares"])
+        self.treatment_method.setVisible(False)
 
         # Page increment and decrement.
         self.page_counter = 0
@@ -320,7 +377,9 @@ class Tabs(QTabWidget):
         self.viewmode_label.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
         self.treatment_label = QLabel("Thinning Method:")
         self.treatment_label.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
+        self.treatment_label.setVisible(False)
 
+        # This is the UI that stays constant between pages.
         self.stand_tab_settings_layout.addWidget(self.prev_page, 0, 2)
         self.stand_tab_settings_layout.addWidget(self.next_page, 0, 3)
         self.stand_tab_settings_layout.addWidget(self.cut_label, 1, 0)
@@ -348,8 +407,6 @@ class Tabs(QTabWidget):
         self.reference_figure = Figure()
         self.ba_ax = self.reference_figure.add_subplot(1, 3, 1)
         self.mcs_ax = self.reference_figure.add_subplot(1, 3, 2)
-        self.mcs_ax.set_yscale("log")
-        self.mcs_ax.set_ylim(bottom=0)
         self.cc_ax = self.reference_figure.add_subplot(1, 3, 3)
         self.reference_canvas = FigureCanvas(self.reference_figure)
 
@@ -388,29 +445,46 @@ class Tabs(QTabWidget):
         self.stand_tab_list_view.selectionModel().currentChanged.connect(self.update_raster_canvas)
 
         # set up plots for land tab
-        seaborn.kdeplot(ax=self.ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_ba_points, = self.ba_ax.plot(self.current_tpa, self.current_ba, 'b^')
-
-        seaborn.kdeplot(ax=self.mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_mcs_points, = self.mcs_ax.plot(self.current_tpa, self.current_mcs, 'b^')
-
-        seaborn.kdeplot(ax=self.cc_ax, x=self.ref_tpa[self.ref_ind['cc']], y=self.ref_cc[self.ref_ind['cc']],
-                        cmap="Oranges", fill=True, bw_adjust=0.5)
         self.unit_cc_points, = self.cc_ax.plot(self.current_tpa, self.current_cc, 'b^')
 
+        # if ref data is provided, 2d KDE plots of ref data.
+        tmprefmcs = 0
+        if self.ref_tpa is not None:
+            seaborn.kdeplot(ax=self.ba_ax, x=self.ref_tpa[self.ref_ind['ba']], y=self.ref_ba[self.ref_ind['ba']],
+                            cmap="Oranges", fill=True, bw_adjust=0.5)
+            seaborn.kdeplot(ax=self.mcs_ax, x=self.ref_tpa[self.ref_ind['mcs']], y=self.ref_mcs[self.ref_ind['mcs']],
+                            cmap="Oranges", fill=True, bw_adjust=0.5)
+            seaborn.kdeplot(ax=self.cc_ax, x=self.ref_tpa[self.ref_ind['cc']], y=self.ref_cc[self.ref_ind['cc']],
+                            cmap="Oranges", fill=True, bw_adjust=0.5)
+            tmprefmcs = np.max(self.ref_mcs[self.ref_ind['mcs']])
+
+        # Log mcs axes if there are large values.
+        if max(np.max(self.current_mcs), tmprefmcs) >= 10:
+            self.mcs_ax.set_yscale("log")
+            self.mcs_ax.set_ylim(bottom=1)
+
+
+        #These are points that will be modified based on rx targets and treatment results values
         self.target_points = [self.ba_ax.plot(0, 0, "gs")[0], self.mcs_ax.plot(0, 0, "gs")[0], self.cc_ax.plot(0, 0, "gs")[0]]
         self.treated_points = [self.ba_ax.plot(0, 0, "mo")[0], self.mcs_ax.plot(0, 0, "mo")[0], self.cc_ax.plot(0, 0, "mo")[0]]
 
+        # And these are arrows that span between the points.
         self.cur_targ_arrow = [self.ba_ax.arrow(0, 0, 0, 0), self.mcs_ax.arrow(0, 0, 0, 0), self.cc_ax.arrow(0, 0, 0, 0)]
         self.targ_treated_arrow = [self.ba_ax.arrow(0, 0, 0, 0), self.mcs_ax.arrow(0, 0, 0, 0), self.cc_ax.arrow(0, 0, 0, 0)]
 
-        [[x.set_visible(False), y.set_visible(False)] for x, y in zip(self.cur_targ_arrow, self.targ_treated_arrow)]
+        # But they start invisible since we only display them when hovering.
+        for i in range(3):
+            self.cur_targ_arrow[i].set_visible(False)
+            self.targ_treated_arrow[i].set_visible(False)
 
+        # this renders the changes we made.
         self.reference_canvas.draw_idle()
 
         #ANNOTATIONS reference:
+        # Set up annotations and hide them so they show up when hovering over them.
+        # Connect an action that monitors the mouse position so they show up only when the mouse is hovering over.
         self.ba_annot = self.ba_ax.annotate("", xy=(0, 0), xytext=(-20, 20), textcoords="offset points",
                                             bbox=dict(boxstyle="round", fc='w'),
                                             arrowprops=dict(arrowstyle='->'))
@@ -433,13 +507,17 @@ class Tabs(QTabWidget):
 
         self.reference_canvas.mpl_connect("button_press_event", self.rx_unit_pick)
 
+        # Creating the legend for the points
         handles = [Patch(facecolor=plt.cm.Oranges(100)),
                    self.unit_cc_points, self.target_points[0], self.treated_points[0]]
         self.reference_figure.legend(handles, ("Reference", "Units", "Targets", "Treated"), loc='right')
 
+        # I forget why but these have to be set invisible after the handles and legend are created...
         [x.set_visible(False) for x in self.target_points]
         [x.set_visible(False) for x in self.treated_points]
 
+
+        # Load any info that is stored in the save state.
         if 'GamingActivity.tabs.model_index_row' in saved_state:
             row = saved_state['GamingActivity.tabs.model_index_row']
             index = self.model.index(row, 0)
@@ -452,17 +530,22 @@ class Tabs(QTabWidget):
             self.raster_viewmode.setCurrentIndex(saved_state['GamingActivity.tabs.viewmode'])
         if 'GamingActivity.tabs.treatmethod' in saved_state:
             self.treatment_method.setCurrentIndex(saved_state['GamingActivity.tabs.treatmethod'])
+        if 'GamingActivity.tabs.cut_range' in saved_state:
+            self.cut_range.setValue(saved_state['GamingActivity.tabs.cut_range'])
         self.reference_canvas.draw_idle()
         self.update_raster_canvas()
 
-    # TODO shift off of project_settings.prj_area.get_units() to self.rx_units.
+    # Take the data from the save state and load.  Or load for the first time if not in the save state.
     def load_and_prep_data(self, saved_state, dll_path):
-        # Get ref data ready
-        # This could be a record array instead of individual arrays??
         self.project_settings = saved_state["ProjectSettings"]
-        if(type(self.project_settings.prj_area._tao_data.dll) is DllStorage):
+
+        # When dll type is float, it means that we save the convfactor in its place
+        # (this allows the program to shut down the link to the dll correctly because dll's can't be pickled).
+        if(type(self.project_settings.prj_area._tao_data.dll) is float):
             print("depickling")
             self.project_settings.prj_area.dePickle(dll_path)
+            for rx in self.project_settings.prj_area.get_units():
+                self.project_settings.prj_area.get_tao_data().exportRxToDll(rx)
 
         ref_db = self.project_settings.get_reference_data()
 
@@ -482,40 +565,41 @@ class Tabs(QTabWidget):
             self.model = RxUnitTableModel(self.rx_units)
 
         # Get reference db info
-        self.ref_tpa = ref_db['tph'].astype(float) / 2.47105
-        self.ref_ba = ref_db['ba'].astype(float) * 4.356
-        self.ref_mcs = ref_db["mcs"].astype(float)
-        self.ref_cc = ref_db['cc'].astype(float)
-        self.ref_names = ["_".join([str(tp), str(source), str(plot_id)]) for tp, source, plot_id in zip(ref_db['name'],
-                                                                                         ref_db['id'],
-                                                                                         ref_db['type'])]
-        # Indices for each metric where tpa and the metric are both not NaN.
-        self.ref_ind = {'tpa': np.where(~np.isnan(self.ref_tpa)), 'ba': np.where(~np.isnan(self.ref_ba)),
-                        'mcs': np.where(~np.isnan(self.ref_mcs)), 'cc': np.where(~np.isnan(self.ref_cc))}
-        for key in self.ref_ind:
-            self.ref_ind[key] = np.intersect1d(self.ref_ind[key], self.ref_ind['tpa'])
+        if ref_db is not None:
+            self.ref_tpa = ref_db['tph'].astype(float) / 2.47105
+            self.ref_ba = ref_db['ba'].astype(float) * 4.356
+            self.ref_mcs = ref_db["mcs"].astype(float)
+            self.ref_cc = ref_db['cc'].astype(float)
 
-        # Ref data chull
-        # BA
-        ref_ba_data = np.array([self.ref_tpa[self.ref_ind['ba']], self.ref_ba[self.ref_ind['ba']]]).transpose()
-        ref_ba_chull = ConvexHull(ref_ba_data)
-        ref_ba_shp_poly = ShpPolygon(list(zip(ref_ba_data[ref_ba_chull.vertices, 0],
-                                              ref_ba_data[ref_ba_chull.vertices, 1])))
-        self.ref_ba_polygon = descartes.PolygonPatch(ref_ba_shp_poly)
+            # Indices for each metric where tpa and the metric are both not NaN.
+            self.ref_ind = {'tpa': np.where(~np.isnan(self.ref_tpa)), 'ba': np.where(~np.isnan(self.ref_ba)),
+                            'mcs': np.where(~np.isnan(self.ref_mcs)), 'cc': np.where(~np.isnan(self.ref_cc))}
+            for key in self.ref_ind:
+                self.ref_ind[key] = np.intersect1d(self.ref_ind[key], self.ref_ind['tpa'])
 
-        # MCS
-        ref_mcs_data = np.array([self.ref_tpa[self.ref_ind['mcs']], self.ref_mcs[self.ref_ind['mcs']]]).transpose()
-        ref_mcs_chull = ConvexHull(ref_mcs_data)
-        ref_mcs_shp_poly = ShpPolygon(list(zip(ref_mcs_data[ref_mcs_chull.vertices, 0],
-                                               ref_mcs_data[ref_mcs_chull.vertices, 1])))
-        self.ref_mcs_polygon = descartes.PolygonPatch(ref_mcs_shp_poly)
+            # Ref data chull
+            # BA
+            ref_ba_data = np.array([self.ref_tpa[self.ref_ind['ba']], self.ref_ba[self.ref_ind['ba']]]).transpose()
+            ref_ba_chull = ConvexHull(ref_ba_data)
+            ref_ba_shp_poly = ShpPolygon(list(zip(ref_ba_data[ref_ba_chull.vertices, 0],
+                                                  ref_ba_data[ref_ba_chull.vertices, 1])))
 
-        # CC
-        ref_cc_data = np.array([self.ref_tpa[self.ref_ind['cc']], self.ref_cc[self.ref_ind['cc']]]).transpose()
-        ref_cc_chull = ConvexHull(ref_cc_data)
-        ref_cc_shp_poly = ShpPolygon(list(zip(ref_cc_data[ref_cc_chull.vertices, 0],
-                                               ref_cc_data[ref_cc_chull.vertices, 1])))
-        self.ref_cc_polygon = descartes.PolygonPatch(ref_cc_shp_poly)
+            # MCS
+            ref_mcs_data = np.array([self.ref_tpa[self.ref_ind['mcs']], self.ref_mcs[self.ref_ind['mcs']]]).transpose()
+            ref_mcs_chull = ConvexHull(ref_mcs_data)
+            ref_mcs_shp_poly = ShpPolygon(list(zip(ref_mcs_data[ref_mcs_chull.vertices, 0],
+                                                   ref_mcs_data[ref_mcs_chull.vertices, 1])))
+
+            # CC
+            ref_cc_data = np.array([self.ref_tpa[self.ref_ind['cc']], self.ref_cc[self.ref_ind['cc']]]).transpose()
+            ref_cc_chull = ConvexHull(ref_cc_data)
+            ref_cc_shp_poly = ShpPolygon(list(zip(ref_cc_data[ref_cc_chull.vertices, 0],
+                                                   ref_cc_data[ref_cc_chull.vertices, 1])))
+        else:
+            self.ref_tpa = None
+            ref_ba_shp_poly = ShpPolygon(((0, 0), (0, -1), (-1, -1), (-1, 0)))
+            ref_mcs_shp_poly = ShpPolygon(((0, 0), (0, -1), (-1, -1), (-1, 0)))
+            ref_cc_shp_poly = ShpPolygon(((0, 0), (0, -1), (-1, -1), (-1, 0)))
 
         # Unit info setup
         self.unit_names = [rx.get_name() for rx in self.rx_units]
@@ -532,14 +616,10 @@ class Tabs(QTabWidget):
             self.decision_spaces = []
             for rx_unit in self.project_settings.prj_area.get_units():
                 print(rx_unit._name)
-                rx_unit._tao_data.exportRxToDll(rx_unit)
                 x = rx_unit.get_simulated_structures_dll()
                 self.decision_spaces.append(x)
 
-        # Get the actionable space for each RxUnit (the intersection of ref conditions and possible treatments)
-        #       This may be really inefficient, patch collections??? but I don't know how to only plot one polygon from
-        #       a patch collection.
-        # BA
+        # BA polygons
         self.unit_ba_polygons = []
         self.unit_ba_intersections = []
         for d_space in self.decision_spaces:
@@ -559,13 +639,15 @@ class Tabs(QTabWidget):
             inter = poly.intersection(ref_ba_shp_poly)
 
 
-            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY":
+            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 poly = MplPolygon([[0, 0]])
             else:
                 poly = descartes.PolygonPatch(poly)
-            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY":
+            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 inter = MplPolygon([[0, 0]])
             else:
+                print(inter.wkt)
+                print(inter)
                 inter = descartes.PolygonPatch(inter)
             self.ba_ax.add_patch(poly)
             self.ba_ax.add_patch(inter)
@@ -590,11 +672,11 @@ class Tabs(QTabWidget):
             poly = ShpPolygon(list(zip(unit_mcs_data[unit_mcs_chull.vertices, 0],
                                        unit_mcs_data[unit_mcs_chull.vertices, 1])))
             inter = poly.intersection(ref_mcs_shp_poly)
-            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY":
+            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 poly = MplPolygon([[0, 0]])
             else:
                 poly = descartes.PolygonPatch(poly)
-            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY":
+            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 inter = MplPolygon([[0, 0]])
             else:
                 inter = descartes.PolygonPatch(inter)
@@ -621,11 +703,11 @@ class Tabs(QTabWidget):
             poly = ShpPolygon(list(zip(unit_cc_data[unit_cc_chull.vertices, 0],
                                        unit_cc_data[unit_cc_chull.vertices, 1])))
             inter = poly.intersection(ref_cc_shp_poly)
-            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY":
+            if poly.wkt == 'GEOMETRYCOLLECTION EMPTY' or poly.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 poly = MplPolygon([[0, 0]])
             else:
                 poly = descartes.PolygonPatch(poly)
-            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY":
+            if inter.wkt == 'GEOMETRYCOLLECTION EMPTY' or inter.wkt == "POLYGON EMPTY" or inter.wkt == "POINT (0 0)":
                 inter = MplPolygon([[0, 0]])
             else:
                 inter = descartes.PolygonPatch(inter)
@@ -669,7 +751,6 @@ class Tabs(QTabWidget):
     def update_raster_canvas(self):
         row = self.stand_tab_list_view.currentIndex().row()
         unit = self.rx_units[row]
-        unit._tao_data.exportRxToDll(unit)
         if self.page_counter == 0:
             self.raster_button.setEnabled(True)
             self._draw_raster(unit)
@@ -689,7 +770,7 @@ class Tabs(QTabWidget):
         clicked = self.raster_button.isChecked()
         viewmode = self.raster_viewmode.currentIndex()
 
-        if clicked:
+        if clicked: # i.e. display treated data
             method = self.treatment_method.currentText()
             kwargs = {'dbh_cutoff': self.cut_range.value()}
             if method == "Add Clumps":
@@ -703,6 +784,8 @@ class Tabs(QTabWidget):
             self.treatment.chm, self.treatment.hill, self.treatment.tao_pts, self.treatment.basin, _ = unit.get_treatment(method, **kwargs)
 
             clumps = unit.get_treat_clump_map()
+            #in some edge cases taos in the tao list might be outside the treated chm...
+            # We remove them here to avoid a crash later.
             rem_pts = self.treatment.tao_pts
             rem_pts = rem_pts[~np.logical_or(rem_pts[:, 0] < self.treatment.chm.xmin, rem_pts[:, 0] > self.treatment.chm.xmax), :]
             rem_pts = rem_pts[~np.logical_or(rem_pts[:, 1] < self.treatment.chm.ymin, rem_pts[:, 1] > self.treatment.chm.ymax), :]
@@ -737,7 +820,7 @@ class Tabs(QTabWidget):
             self.raster_ax.imshow(self.treatment.hill, cmap='Greys', alpha=0.5)
             cb_label = "Basin ID (unique values)"
         else:
-            colors = ("black", "#7bc043", "#fdf498", "#f37736", "#ee4035")
+            colors = ("white", "#7bc043", "#fdf498", "#f37736", "#ee4035")
             cm_name = "Clump Colors"
             n_bin = 5
             cm = LinearSegmentedColormap.from_list(cm_name, colors, n_bin)
@@ -747,6 +830,7 @@ class Tabs(QTabWidget):
             self.raster_ax.imshow(self.treatment.hill, cmap='Greys', alpha=0.5)
             cb_label = "Clump Map (Clump bins)"
 
+        # special legend for clump bins, otherwise normal legend.
         if viewmode == 2:
             self.raster_cb = self.raster_figure.colorbar(img, orientation="vertical", label=cb_label,
                                                          ticks=[0, 1, 3, 7, 55])
@@ -1041,72 +1125,78 @@ class Tabs(QTabWidget):
                     ind = QModelIndex(self.model.index(ind_cc['ind'][0], 0))
                 self.stand_tab_list_view.setCurrentIndex(ind)
 
-    # This exports the current "raster canvas" whether its the treatment view, or one of the report pages.
-    # TODO: Potentially split this off into it's own activity.
+    # This exports the current "raster canvas" whether it's the treatment view, or one of the report pages.
     def export_tif(self):
-        if self.page_counter == 0:
-            row = self.stand_tab_list_view.currentIndex().row()
-            unit = self.rx_units[row]
-            filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
-            with tempfile.TemporaryDirectory() as tmpdir:
-                self.raster_figure.savefig(tmpdir + "/tmp.tif", dpi=300)
-                img = PIL.Image.open(tmpdir + "/tmp.tif")
-                i = PIL.ImageDraw.Draw(img)
-                f = PIL.ImageFont.truetype("arial.ttf", 70)
-                i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
-                if unit.get_treat_structure() is not None:
-                    i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
-                else:
-                    i.text((100, 800), "-", font=f, fill=(0, 0, 0))
-                i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
-                img.save(filename)
-                img.close()
+        if self.tabs.currentIndex() == 0:
+            if self.page_counter == 0:
+                row = self.stand_tab_list_view.currentIndex().row()
+                unit = self.rx_units[row]
+                filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    self.raster_figure.savefig(tmpdir + "/tmp.tif", dpi=300)
+                    img = PIL.Image.open(tmpdir + "/tmp.tif")
+                    i = PIL.ImageDraw.Draw(img)
+                    f = PIL.ImageFont.truetype("arial.ttf", 70)
+                    i.text((100, 100), 'Current\n' + str(unit.get_current_structure()), font=f, fill=(0, 0, 0))
+                    if unit.get_treat_structure() is not None:
+                        i.text((100, 800), 'Post-Treatment\n' + str(unit.get_treat_structure()), font=f, fill=(0, 0, 0))
+                    else:
+                        i.text((100, 800), "-", font=f, fill=(0, 0, 0))
+                    i.text((100, 1600), 'Target\n' + str(unit.get_target_structure()), font=f, fill=(0, 0, 0))
+                    img.save(filename)
+                    img.close()
 
-            fig_dpi = self.raster_figure.dpi
-            # Corners array:
-            #   [[left, bottom]
-            #    [right, top]]
-            corners = self.raster_ax.bbox.get_points() * 300 / fig_dpi
+                fig_dpi = self.raster_figure.dpi
+                # Corners array:
+                #   [[left, bottom]
+                #    [right, top]]
+                corners = self.raster_ax.bbox.get_points() * 300 / fig_dpi
 
-            r = self.get_current_unit().get_chm()
-            proj = r.projection
+                r = self.get_current_unit().get_chm()
+                proj = r.projection
 
-            e = r.extent
-            xrange = e.xmax - e.xmin
-            yrange = e.ymax - e.ymin
+                e = r.extent
+                xrange = e.xmax - e.xmin
+                yrange = e.ymax - e.ymin
 
-            e.xmax = e.xmax + xrange * 0.05
-            e.xmin = e.xmin - xrange * 0.05
-            e.ymin = e.ymin - yrange * 0.05
-            e.ymax = e.ymax + yrange * 0.05
+                e.xmax = e.xmax + xrange * 0.05
+                e.xmin = e.xmin - xrange * 0.05
+                e.ymin = e.ymin - yrange * 0.05
+                e.ymax = e.ymax + yrange * 0.05
 
-            xres = (e.xmax - e.xmin) / (corners[1, 0] - corners[0, 0])  # Positive  value, left side = 0
-            yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])*-1  # Negative value, top = 0
+                xres = (e.xmax - e.xmin) / (corners[1, 0] - corners[0, 0])  # Positive  value, left side = 0
+                yres = (e.ymax - e.ymin) / (corners[0, 1] - corners[1, 1])*-1  # Negative value, top = 0
 
-            width, height = self.raster_canvas.get_width_height()
-            height *= 300 / fig_dpi
-            xmin = e.xmin - corners[0, 0] * xres
-            ymax = e.ymax + (height - corners[1, 1]) * yres
+                width, height = self.raster_canvas.get_width_height()
+                height *= 300 / fig_dpi
+                xmin = e.xmin - corners[0, 0] * xres
+                ymax = e.ymax + (height - corners[1, 1]) * yres
 
-            ds = rasterio.open(filename)
-            data = ds.read()
-            ht = ds.height
-            wd = ds.width
-            ext = raster.Extent(xmin, xmin+wd*xres, ymax-ht*yres, ymax)
-            r = raster.Raster(ext, (xres, yres), wd, ht, proj, data, ds.dtypes[0])
-            ds.close()
-            r.writeRaster(filename)
+                ds = rasterio.open(filename)
+                data = ds.read()
+                ht = ds.height
+                wd = ds.width
+                ext = raster.Extent(xmin, xmin+wd*xres, ymax-ht*yres, ymax)
+                r = raster.Raster(ext, (xres, yres), wd, ht, proj, data, ds.dtypes[0])
+                ds.close()
+                r.writeRaster(filename)
 
-        elif self.page_counter == 1:
+            elif self.page_counter == 1:
+                filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
+                x = QApplication.primaryScreen()
+                p = x.grabWindow(self.treat_display.winId())
+                p.save(filename, 'tif')
+            else:
+                filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
+                x = QApplication.primaryScreen()
+                p = x.grabWindow(self.cut_trees_display.winId())
+                p.save(filename, 'tif')
+        elif self.tabs.currentIndex() == 1:
             filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
             x = QApplication.primaryScreen()
-            p = x.grabWindow(self.treat_display.winId())
+            p = x.grabWindow(self.land_tab.winId())
             p.save(filename, 'tif')
-        else:
-            filename = QFileDialog.getSaveFileName(self, "Enter a file name to export data to.", "", '*.tif')[0]
-            x = QApplication.primaryScreen()
-            p = x.grabWindow(self.cut_trees_display.winId())
-            p.save(filename, 'tif')
+
 
 
     # export the current raster depending on whether the treatment view is check or not.
@@ -1136,6 +1226,8 @@ class Tabs(QTabWidget):
     # Export the tree points
     def export_features(self):
         filename = QFileDialog.getSaveFileName(self, "Enter a file name to export point data to.", "", "'.shp")[0]
+        if filename[len(filename) - 4:] != ".shp":
+            filename = filename + ".shp"
         unit = self.get_current_unit()
         if self.raster_button.isChecked():
             data = unit.get_treat_points()
@@ -1170,6 +1262,8 @@ class Tabs(QTabWidget):
     # export csv treelist
     def export_treelist(self):
         filename = QFileDialog.getSaveFileName(self, "Enter a file name to export tree list data to.", "", "'.csv")[0]
+        if filename[len(filename) - 4:] != ".csv":
+            filename = filename + ".csv"
         headers = ['x', 'y', 'area', 'height', 'crown']
         unit = self.get_current_unit()
         if self.raster_button.isChecked():
@@ -1184,6 +1278,28 @@ class Tabs(QTabWidget):
             w = csv.writer(out)
             for line in r:
                 w.writerow(line)
+
+    # Not really working yet, hence it is not shown in the file menu yet.
+    def print(self):
+        printer = QtPrintSupport.QPrinter()
+        printer.setPageSize(QtGui.QPagedPaintDevice.Letter)
+        printer.setColorMode(QtPrintSupport.QPrinter.ColorMode.Color)
+        printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+        printer.setOutputFileName("E:/test.pdf")
+        painter = QtGui.QPainter(printer)
+        #painter.begin(printer)
+
+        screen = self.raster_canvas.grab().scaled(
+            printer.pageRect(QtPrintSupport.QPrinter.DevicePixel).size().toSize(),
+            Qt.KeepAspectRatio)
+        painter.drawPixmap(0, 0, screen)
+
+        screen = self.reference_canvas.grab().scaled(
+            printer.pageRect(QtPrintSupport.QPrinter.DevicePixel).size().toSize(),
+            Qt.KeepAspectRatio)
+        painter.drawPixmap(0, 500, screen)
+
+        painter.end()
 
     # Helper function to return the unit currently displayed.
     def get_current_unit(self):
@@ -1221,7 +1337,6 @@ class RxUnitTableModel(QAbstractTableModel):
         return len(self._data[0])
 
     # This interfaces the datamodel and the querier
-    # TODO: Add flags for when qdatawidgetmapper queries so only return strings then.
     def data(self, index, role=Qt.DisplayRole):
         if index.isValid():
             row = index.row()
@@ -1284,7 +1399,7 @@ class RxUnitTableModel(QAbstractTableModel):
         pass
 
 
-# This class is the widget that srufaces the target and current structure from the datamodel.
+# This class is the widget that surfaces the target and current structure from the datamodel.
 class StructureInfo(QWidget):
     def __init__(self, parent=None):
         super(StructureInfo, self).__init__(parent)

@@ -1,4 +1,15 @@
-"""Custom framework for managing Qt windowing and application lifecycle, as well as saving/loading
+"""
+    Copyright (C) 2024  University of Washington
+    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
+
+Bryce Bartl-Geller & Sean Jeronimo
+University of Washington Forest Resilience Lab
+12/6/2024
+
+activity.py
+Custom framework for managing Qt windowing and application lifecycle, as well as saving/loading
 persistent state information.
 """
 
@@ -322,7 +333,7 @@ class LoadStateActivity(Activity):
         # TODO make strings a declarative setting/localizable
         self.label = QLabel("What would you like to do?")
         self.load_button = QPushButton("Work from saved file")
-        self.new_button = QPushButton("Start new work")
+        self.new_button = QPushButton("Start new project")
         
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.label)
