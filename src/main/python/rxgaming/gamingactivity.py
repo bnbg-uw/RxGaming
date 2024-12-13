@@ -336,7 +336,7 @@ class Tabs(QTabWidget):
 
         self.raster_button = QPushButton("Show Treatment")
         self.raster_button.setCheckable(True)
-        self.raster_button.clicked[bool].connect(self.update_raster_canvas)
+        self.raster_button.clicked[bool].connect(self.raster_button_clicked)
         self.raster_button.setStyleSheet("QPushButton:enabled {color: black;}\n\
                                          QPushButton:checked { background-color: rgb(80, 80, 80); \
                                          border: none;\
@@ -747,18 +747,19 @@ class Tabs(QTabWidget):
             raise ValueError("i is not a valid page index.")
         self.update_raster_canvas()
 
+    def raster_button_clicked(self):
+        self.set_page(0)
+        self.update_raster_canvas()
+
     # Parent function for figuring out what to draw on the treat view.
     def update_raster_canvas(self):
         row = self.stand_tab_list_view.currentIndex().row()
         unit = self.rx_units[row]
         if self.page_counter == 0:
-            self.raster_button.setEnabled(True)
             self._draw_raster(unit)
         elif self.page_counter == 1:
-            self.raster_button.setEnabled(False)
             self._draw_report_page(unit)
         else:
-            self.raster_button.setEnabled(False)
             self._draw_cut_report_page(unit)
 
     # This draws the view that shows the treatment visualization rasters.
@@ -863,8 +864,16 @@ class Tabs(QTabWidget):
         self.raster_ax.set_ylabel("Distance, %s" % label)
 
         # Set title and format axes to the units rather than pixels.
+        result = unit.treatment_result
+        if clicked:
+            if result == 1:
+                result = "; Failed due to diameter limit."
+            else:
+                result = ""
+        else:
+            result = ""
         self.raster_ax.set_title(
-            self.project_settings.get_name() + ', ' + str(unit.get_name()) + ' ' + str(self.raster_viewmode.currentText()))
+            self.project_settings.get_name() + ', ' + str(unit.get_name()) + ' ' + str(self.raster_viewmode.currentText()) + result)
         self.raster_canvas.draw_idle()
 
         self.raster_ax.get_xaxis().set_major_formatter(ticker.FuncFormatter(lambda x, p: round(x * self.treatment.chm.xres * factor)))
@@ -982,7 +991,7 @@ class Tabs(QTabWidget):
         self.cut_trees_ax.set_ylabel('Density')
         self.cut_trees_ax.set_title('Cut Trees Basal Area Distribution')
 
-        pts = unit.get_treat_points()
+        pts = unit.cut_taos
         if pts is not None:
             dbh = unit._tao_data.get_dbh_from_height_dll(pts[:, 3])
             ba = 0.005454 * (dbh / 2.54)**2

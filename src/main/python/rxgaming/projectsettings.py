@@ -47,7 +47,7 @@ class ProjectSettings:
         except Exception as exc:
             raise TypeError("Could not read MCS proportion data.") from exc
 
-        print(dll_path)
+        print("RxGaming Dll Path Found: " + dll_path)
         self.prj_area = ProjectArea(unit_poly_path, lidar_data_path, unit_name, nthreads, dll_path)
 
     def get_name(self):
@@ -84,18 +84,23 @@ class ProjectSettings:
 # These are nesting class, the project area holds the lidar data and the rxunits.
 class ProjectArea:
     def __init__(self, unit_poly_path, lidar_data_path, unit_name, nthreads, dll_path):
+        print("Creating project area.")
+        print("Reading unit polygon.")
         with fiona.open(unit_poly_path, 'r') as shp:
             self._unit_wkt = shp.crs_wkt
             self._unit_poly = list(shp)
 
+        print("Reading lidar dataset.")
         self._tao_data = LidarDataset(lidar_data_path, dll_path)
 
-        # this cleans up bad geometry (self intersections, duplicated points, etc.
+        # this cleans up bad geometry (self intersections, duplicated points, etc.).
+        print("Cleaning unit polygon geometry.")
         shp = [shapely.geometry.shape(feature['geometry']).buffer(0) for feature in self._unit_poly
                if feature['geometry'] is not None]
         shp = [self._tao_data.reprojectPolygon(s, self._unit_wkt).buffer(0) for s in shp]
         self._unit_wkt = self._tao_data.get_wkt()
 
+        print("Calculating Height to DBH allometry.")
         merged = shapely.unary_union(shp)
         self._tao_data.set_allometry(merged.convex_hull)
         shp = self._tao_data.doPreProcessing(shp, nthreads)
@@ -103,6 +108,7 @@ class ProjectArea:
         if not len(shp):
             raise RuntimeError("No treatment units overlap lidar data.")
 
+        print("Creating RxUnits.")
         units = [unit for unit in shp]
         names = [unit['properties'][unit_name] if unit_name in unit['properties'] else None for unit in self._unit_poly]
         self._units = [RxUnit(unit, self._unit_wkt, self._tao_data, idx, name)
@@ -164,11 +170,11 @@ class ProjectArea:
 # most of the communicating with the dll happens here.
 class RxUnit:
     def __init__(self, unit_poly, unit_wkt, tao_data, idx, name=None):
-        self.idx = idx # for communicating with the dll which unit this is.
+        self.idx = idx  # for communicating with the dll which unit this is.
         print("Name: " + str(name) + " " + str(datetime.now()))
         self._unit_poly = self._validate_polygon(unit_poly)
         self._unit_wkt = unit_wkt
-        self._tao_data = tao_data # so we can communicate with the dll.
+        self._tao_data = tao_data  # so we can communicate with the dll.
         self._tao_points = self.get_tao_points_dll()
         self._chm = self.get_canopy_model_dll()
         self._max_height_map = self.get_max_height_map_dll()
@@ -182,6 +188,8 @@ class RxUnit:
         self._current_structure = self.get_current_structure_dll()
         self._target_structure = copy.deepcopy(self._current_structure)
         self._treat_taos = None
+        self.cut_taos = None
+        self.treatment_result = None
         self._treat_chm = None
         self._treat_hill = None
         self._treat_basin = None
@@ -195,8 +203,6 @@ class RxUnit:
             self._name = name
         else:
             self._name = "Unnamed"
-        print("Done: " + str(name) + " " + str(datetime.now()))
-
 
     # this method is duplicated in lidar dataset.  Make it better.
     @staticmethod
@@ -603,6 +609,8 @@ class RxUnit:
         self._treat_chm = self.get_treat_chm_dll()
         self._treat_basin = self.get_treat_basin_dll()
         self._treat_taos = self.get_treat_taos_dll()
+        self.cut_taos = self.get_cut_taos_dll()
+        self.treatment_result = self.get_treatment_result_dll()
         self._treat_best_struct = self.get_treated_structure_dll()
 
         self._treat_hill = copy.deepcopy(self._hillshade)
@@ -614,6 +622,11 @@ class RxUnit:
         self._treat_cutoff = dbhMax
         print("treatment")
         return self._treat_chm, self._treat_hill, self._treat_taos, self._treat_basin, self._treat_best_struct
+
+    def get_treatment_result_dll(self):
+        self._tao_data.dll.getTreatmentResult.argtypes = [ctypes.c_int]
+        self._tao_data.dll.getTreatmentResult.restype = int
+        return self._tao_data.dll.getTreatmentResult(ctypes.c_int(self.idx))
 
     def get_treated_structure(self):
         return self._treat_best_struct
@@ -704,6 +717,17 @@ class RxUnit:
         self._tao_data.dll.getTreatedTaos.restype = None
         taos = np.empty(shape=(x, 5), dtype=np.float64)
         self._tao_data.dll.getTreatedTaos(ctypes.c_int(self.idx), taos)
+        return taos
+
+    def get_cut_taos_dll(self):
+        self._tao_data.dll.getNCutTaos.argtypes = [ctypes.c_int]
+        self._tao_data.dll.getNCutTaos.restype = int
+        x = self._tao_data.dll.getNCutTaos(ctypes.c_int(self.idx))
+
+        self._tao_data.dll.getCutTaos.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(np.float64, flags="C_CONTIGUOUS")]
+        self._tao_data.dll.getCutTaos.restype = None
+        taos = np.empty(shape=(x, 5), dtype=np.float64)
+        self._tao_data.dll.getCutTaos(ctypes.c_int(self.idx), taos)
         return taos
 
     def get_treat_raw_clumps_dll(self):
@@ -911,8 +935,6 @@ class LidarDataset:
         crsWkt = crsWkt.encode('utf-8')
 
         result = []
-        print("projpoly")
-        print(len(projPoly))
         for shp in projPoly:
             wkt = shapely.wkt.dumps(shp)
             wkt = wkt.encode('utf-8')
@@ -920,8 +942,7 @@ class LidarDataset:
 
         self.dll.doPreProcessing.argtypes = [ctypes.c_int]
         self.dll.doPreProcessing.restype = None
-        print("dopreprocessing")
-
+        print("Doing preprocessing on " + str(nthreads) + " threads.")
         self.dll.doPreProcessing(nthreads)
         return [shp for shp, res in zip(projPoly, result) if res]
 
@@ -976,9 +997,8 @@ class LidarDataset:
 
         self.dll.setTaos.argtypes = [ctypes.c_int, np.ctypeslib.ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
         self.dll.setTaos.restype = None
-        self.dll.setTaos(rx.idx, rx._tao_points, rx._tao_points.shape[0])
-        print("Rxunit" + str(rx.idx))
-        print(rx._tao_points.shape[0])
+        self.dll.setTaos(rx.idx, rx._tao_points.astype(float), rx._tao_points.size)
+
         self.dll.calcCurrentStructure.argtypes = [ctypes.c_int]
         self.dll.calcCurrentStructure.restype = None
         self.dll.calcCurrentStructure(rx.idx)
@@ -1016,29 +1036,26 @@ class LidarDataset:
 
         if isinstance(a, Allometry):
             self._allometry = a
-            print(str(a.intercept) + " " + str(a.slope) + " " + str(a.transform))
             self.dll.setAllometry(ctypes.c_double(a.intercept), ctypes.c_double(a.slope),
                                   ctypes.c_int(a.transform))
             return
         try:
-            print("Trying allometry from project shape")
+            print("Trying allometry from project shape.")
             self.dll.setAllometryFiaPath.argtypes = [ctypes.c_char_p]
             self.dll.setAllometryFiaPath.restype = None
             fiaPath = os.path.dirname(self._dll_path) + "/fia/"
-            print(fiaPath)
+            print("Fia data path is: " + fiaPath)
             fiaPath = fiaPath.encode('utf-8')
             self.dll.setAllometryFiaPath(fiaPath)
-            print("Set fia path")
 
             self.dll.setAllometryWkt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-            self.dll.setAllometryWkt.restype = None
+            self.dll.setAllometryWkt.restype = int
             crsWkt = self.get_wkt()
-            print(a)
             wkt = shapely.wkt.dumps(a)
             crsWkt = crsWkt.encode('utf-8')
             wkt = wkt.encode('utf-8')
-            self.dll.setAllometryWkt(wkt, crsWkt)
-            print("Set allometry wkt")
+            nplots = self.dll.setAllometryWkt(wkt, crsWkt)
+            print("N plots founds: " + str(nplots))
 
             self.dll.getAllometry.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
                                               ctypes.POINTER(ctypes.c_int)]
@@ -1048,10 +1065,7 @@ class LidarDataset:
             transform = ctypes.c_int(0)
             self.dll.getAllometry(ctypes.byref(intercept), ctypes.byref(slope), ctypes.byref(transform))
             self._allometry = Allometry(intercept.value, slope.value, transform.value)
-            print("get allometry")
-
         except BaseException as e:
-            print(traceback.format_exc())
             raise ValueError("Provide an Allometry object or a wkt to project area")
 
 class Allometry:
@@ -1066,6 +1080,19 @@ class Allometry:
         self.transform = 0
 
     def __init__(self, i, s, t):
+        transform = ""
+        if t == 0:
+            transform = "response transform = none"
+        elif t == 1:
+            transform = "response transform = square"
+        elif t == 2:
+            transform = "response transform = cube"
+        else:
+            transform = "transform = log-log"
+
+        print("Allometry: intercept = " + str(round(i, 4)) +
+              "; slope = " + str(round(s, 4)) +
+              " " + transform)
         self.slope = s
         self.intercept = i
         self.transform = t
