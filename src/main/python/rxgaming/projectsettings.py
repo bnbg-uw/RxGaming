@@ -237,10 +237,13 @@ class RxUnit:
         self._tao_data.dll.setTargetStructure.restype = None
         bah = self._target_structure.ba / 4.356
         tph = self._target_structure.tpa * 2.47105
-        self._tao_data.dll.setTargetStructure(ctypes.c_int(self.idx), ctypes.c_double(bah), ctypes.c_double(tph),
+        cc = self._target_structure.cc / 100
+        self._tao_data.dll.setTargetStructure(ctypes.c_int(self.idx),
+                                              ctypes.c_double(bah),
+                                              ctypes.c_double(tph),
                                               ctypes.c_double(self._target_structure.mcs),
                                               ctypes.c_double(self._target_structure.osi),
-                                              ctypes.c_double(self._target_structure.cc))
+                                              ctypes.c_double(cc))
 
     def get_target_structure(self):
         return self._target_structure
@@ -556,7 +559,8 @@ class RxUnit:
                                                ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
+        cc = cc.value*100
+        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
         return x
 
     def get_treated_structure_dll(self):
@@ -573,7 +577,8 @@ class RxUnit:
                                                ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
+        cc = cc.value * 100
+        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
         return x
 
     def get_simulated_structures_dll(self, bb_dbh=30):
@@ -705,7 +710,8 @@ class RxUnit:
                                                ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc.value)
+        cc = cc.value * 100
+        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
         return x
 
     def get_treat_taos_dll(self):
@@ -889,8 +895,11 @@ class LidarDataset:
 
         b_root_path = self._root_path.encode('utf-8')
         self.dll.initLidarDataset.argtypes = [ctypes.c_char_p]
-        self.dll.initLidarDataset.restype = None
-        self.dll.initLidarDataset(b_root_path)
+        self.dll.initLidarDataset.restype = bool
+        success = self.dll.initLidarDataset(b_root_path)
+        if not success:
+            raise RuntimeError("Unable to read the lidardataset path as a lidar dataset. "
+                               "Is it formatted correctly, with complete data?")
         print("init done")
 
     def prepToPickle(self):

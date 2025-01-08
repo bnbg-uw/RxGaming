@@ -569,7 +569,7 @@ class Tabs(QTabWidget):
             self.ref_tpa = ref_db['tph'].astype(float) / 2.47105
             self.ref_ba = ref_db['ba'].astype(float) * 4.356
             self.ref_mcs = ref_db["mcs"].astype(float)
-            self.ref_cc = ref_db['cc'].astype(float)
+            self.ref_cc = ref_db['cc'].astype(float) * 100
 
             # Indices for each metric where tpa and the metric are both not NaN.
             self.ref_ind = {'tpa': np.where(~np.isnan(self.ref_tpa)), 'ba': np.where(~np.isnan(self.ref_ba)),
@@ -1376,36 +1376,18 @@ class RxUnitTableModel(QAbstractTableModel):
             if role == Qt.EditRole and index.isValid():
                 row = index.row()
                 col = index.column()
-                if self.value_is_valid(value, row, col):
-                    self._data[row][col] = value
-                    c = col - 5
-                    if c == 3:
-                        c = 4
-                    self._rxunits[row].set_target_structure_by_idx(c, value)
-                    # self._locks[row][col - 5] = True
-                    # self.update_and_guess_values(row)
-                    self.dataChanged.emit(index, index)
-                    return True
+                self._data[row][col] = value
+                c = col - 5
+                if c == 3: #skip OSI in the structure summary class.
+                    c = 4
+                self._rxunits[row].set_target_structure_by_idx(c, value)
+                self.dataChanged.emit(index, index)
+                return True
         except Exception as e:
             print(e)
             pass
         self.dataChanged.emit(index, index)
         return False
-
-    # TODO Implement this.
-    def value_is_valid(self, value, row, col):
-        ''' ds = self._decision_space[row]
-        vals = [ss[col] for ss in ds]
-        if min(vals) <= value <= max(vals):
-            return True
-        else:
-            return False '''
-        return True
-
-    # TODO. When impemented this would autofill unset targets based on set targets.
-    def update_and_guess_values(self, row, col):
-        # ts = self._rxunits[row].get_target_structure
-        pass
 
 
 # This class is the widget that surfaces the target and current structure from the datamodel.
@@ -1469,11 +1451,6 @@ class StructureInfo(QWidget):
 
     def set_selection(self, current, old):
         self.mapper.setCurrentModelIndex(current)
-
-    # Unused
-    def get_checked(self):
-        return list(self.tpa_checkbox.isChecked(), self.ba_checkbox.isChecked(), self.mcs_checkbox.isChecked(),
-                    self.cc_checkbox.isChecked())
 
 
 # Dummy class to store the treatment info (for multithreading in theory).
