@@ -619,6 +619,16 @@ class RxUnit:
         self._treat_best_struct = self.get_treated_structure_dll()
 
         self._treat_hill = copy.deepcopy(self._hillshade)
+        print("treat_hill:")
+        print((self._treat_hill.shape))
+        print((self._hillshade.shape))
+        print(self._chm.values.shape)
+        print("Treat_basin:")
+        print((self._treat_basin.values.shape))
+        print("Basin:")
+        print(self._basin_map.values.shape)
+        print((self._treat_basin.values == 1).shape)
+
         self._treat_hill[self._treat_basin.values == 1] = 200
 
         self._treat_clump_sizes = self.get_treat_raw_clumps_dll()
