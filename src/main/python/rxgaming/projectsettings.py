@@ -619,15 +619,6 @@ class RxUnit:
         self._treat_best_struct = self.get_treated_structure_dll()
 
         self._treat_hill = copy.deepcopy(self._hillshade)
-        print("treat_hill:")
-        print((self._treat_hill.shape))
-        print((self._hillshade.shape))
-        print(self._chm.values.shape)
-        print("Treat_basin:")
-        print((self._treat_basin.values.shape))
-        print("Basin:")
-        print(self._basin_map.values.shape)
-        print((self._treat_basin.values == 1).shape)
 
         self._treat_hill[self._treat_basin.values == 1] = 200
 
@@ -882,9 +873,7 @@ class LidarDataset:
                 self.set_units("meters")
 
         if lapis:
-            layout_poly_path = [f for f in os.listdir(os.path.join(path, "Layout"))
-                                if f.endswith(".shp")][0]
-            self.set_layout_poly(os.path.join(path, "Layout", layout_poly_path))
+            self.set_layout_poly(os.path.join(path, "Layout", "TileLayout.shp"))
         elif lidR:
             layout_poly_path = [f for f in os.listdir(os.path.join(path, "layout"))
                                 if f.endswith(".shp")][0]

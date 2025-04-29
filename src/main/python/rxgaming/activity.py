@@ -58,7 +58,7 @@ class Activity(ABC):
     _Activities = []  # List of current activities. Exists so that activities don't get garbage collected
     _Saved_State = {}  # Key/value pairs for all info that should be persistent across instances
     _Stopping = False  # Flag, True when application is shutting down
-    version = "1.0.4"
+    version = "1.0.5"
     
     Try_To_Save = False
     """Set to ``True`` if you want the application to prompt the user to save when exiting."""
