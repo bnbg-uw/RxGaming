@@ -183,14 +183,14 @@ class ProjectSettingsActivity(Activity):
         self.w.finished.connect(self.w.deleteLater)
         self.ps_thread.finished.connect(self.ps_thread.deleteLater)
         def cleanup_stream_thread():
-            print(1)
+            print("cstreamthred1")
             if self.stream_thread.isRunning():
-                print(2)
+                print("cstreamthred2")
                 self.r.stop()
                 self.stream_thread.quit()
                 self.r.deleteLater()
                 self.stream_thread.deleteLater()
-                print(3)
+                print("cstreamthred3")
 
         self.w.finished.connect(cleanup_stream_thread)
         self.w.finished.connect(lambda: print(project_settings))

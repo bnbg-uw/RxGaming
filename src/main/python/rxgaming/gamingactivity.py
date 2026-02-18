@@ -696,7 +696,7 @@ class Tabs(QTabWidget):
         self.unit_cc_polygons = []
         self.unit_cc_intersections = []
         for d_space in self.decision_spaces:
-            tpa, cc = zip(*((ss.tpa, ss.cc) for ss in d_space))
+            tpa, cc = zip(*((ss.tpa, ss.cc * 100) for ss in d_space))
             unit_cc_data = np.array([tpa, cc]).transpose()
             unit_cc_data = unit_cc_data[~np.isnan(unit_cc_data).any(axis=1), :]
             unit_cc_chull = ConvexHull(unit_cc_data)
@@ -1210,7 +1210,7 @@ class Tabs(QTabWidget):
 
     # export the current raster depending on whether the treatment view is check or not.
     def export_raster(self):
-        filename = QFileDialog.getSaveFileName(self, "Enter a file name to export raster data to.", "", "'tif")[0]
+        filename = QFileDialog.getSaveFileName(self, "Enter a file name to export raster data to.", "", "'*.tif")[0]
         if filename[len(filename) - 4:] != ".tif":
             filename = filename + ".tif"
         unit = self.get_current_unit()
@@ -1273,12 +1273,14 @@ class Tabs(QTabWidget):
         filename = QFileDialog.getSaveFileName(self, "Enter a file name to export tree list data to.", "", "'.csv")[0]
         if filename[len(filename) - 4:] != ".csv":
             filename = filename + ".csv"
-        headers = ['x', 'y', 'area', 'height', 'crown']
+        headers = ['x', 'y', 'area', 'height', 'crown', "dia"]
         unit = self.get_current_unit()
         if self.raster_button.isChecked():
             data = unit.get_treat_points()
         else:
             data = unit.get_tao_points()
+        dbh = unit._tao_data.get_dbh_from_height_dll(data[:, 3])
+        data = np.column_stack((data, dbh))
         np.savetxt(filename, data, delimiter=',')
         with open(filename, 'r') as f:
             r = list(csv.reader(f))

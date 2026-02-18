@@ -7,8 +7,10 @@
     <list default="true" id="871324ea-78ff-4d6b-9a72-e05cfd3e9945" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/icons/Icon.ico" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/icons/Icon.ico" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/activity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/activity.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettingsactivity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettingsactivity.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -38,7 +40,9 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;F:/RxGaming&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
 }</component>
   <component name="SharedIndexes">
