@@ -49,6 +49,6 @@ if __name__ == '__main__':
     sys.excepthook = handle_exception
     appctxt = AppContext()
     prop_table = appctxt.get_resource("mcs_prop.csv")
-    dll = appctxt.get_resource("bin/cpprxgaming.dll")
+    dll = appctxt.get_resource("bin/pyRxTools.dll")
     appctxt.run(prop_table_path=prop_table, dll_path=dll)
     sys.exit()

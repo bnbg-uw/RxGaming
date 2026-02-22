@@ -7,11 +7,24 @@
     <list default="true" id="871324ea-78ff-4d6b-9a72-e05cfd3e9945" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/icons/Icon.ico" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/icons/Icon.ico" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/activity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/activity.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/__main__.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/__main__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/gamingactivity.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettingsactivity.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettingsactivity.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/python/rxgaming/projectsettings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/Lerc.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/Lerc.dll" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/cppRxGaming.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geos.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/geos.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/geos_c.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/geos_c.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/iconv-2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/iconv-2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/jpeg62.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/jpeg62.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/liblzma.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/liblzma.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libpq.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libpq.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/libxml2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/libxml2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/netcdf.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/netcdf.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/openjp2.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/openjp2.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/spatialite.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/spatialite.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/sqlite3.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/sqlite3.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/szip.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/szip.dll" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/base/bin/zstd.dll" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/base/bin/zstd.dll" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

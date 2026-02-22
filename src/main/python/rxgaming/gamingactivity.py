@@ -1380,8 +1380,6 @@ class RxUnitTableModel(QAbstractTableModel):
                 col = index.column()
                 self._data[row][col] = value
                 c = col - 5
-                if c == 3: #skip OSI in the structure summary class.
-                    c = 4
                 self._rxunits[row].set_target_structure_by_idx(c, value)
                 self.dataChanged.emit(index, index)
                 return True

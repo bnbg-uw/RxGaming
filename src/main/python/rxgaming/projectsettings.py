@@ -233,7 +233,7 @@ class RxUnit:
         self._target_structure[index] = value
 
     def set_target_structure_dll(self):
-        self._tao_data.dll.setTargetStructure.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
+        self._tao_data.dll.setTargetStructure.argtypes = [ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double]
         self._tao_data.dll.setTargetStructure.restype = None
         bah = self._target_structure.ba / 4.356
         tph = self._target_structure.tpa * 2.47105
@@ -242,7 +242,6 @@ class RxUnit:
                                               ctypes.c_double(bah),
                                               ctypes.c_double(tph),
                                               ctypes.c_double(self._target_structure.mcs),
-                                              ctypes.c_double(self._target_structure.osi),
                                               ctypes.c_double(cc))
 
     def get_target_structure(self):
@@ -547,38 +546,35 @@ class RxUnit:
 
     def get_current_structure_dll(self):
         self._tao_data.dll.getCurrentStructure.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                                           ctypes.POINTER(ctypes.c_double)]
+                                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
         self._tao_data.dll.getCurrentStructure.restypes = None
         bah = ctypes.c_double(0)
         tph = ctypes.c_double(0)
         mcs = ctypes.c_double(0)
-        osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
         self._tao_data.dll.getCurrentStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
-                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
+                                               ctypes.byref(mcs), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         cc = cc.value*100
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
+        x = StructureSummary(tpa, baa, mcs.value, cc)
         return x
 
     def get_treated_structure_dll(self):
         self._tao_data.dll.getTreatedStructure.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
-                                                           ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
+                                                           ctypes.POINTER(ctypes.c_double)]
         self._tao_data.dll.getTreatedStructure.restypes = None
         bah = ctypes.c_double(0)
         tph = ctypes.c_double(0)
         mcs = ctypes.c_double(0)
-        osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
         self._tao_data.dll.getTreatedStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
-                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
+                                               ctypes.byref(mcs), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         cc = cc.value * 100
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
+        x = StructureSummary(tpa, baa, mcs.value, cc)
         return x
 
     def get_simulated_structures_dll(self, bb_dbh=30):
@@ -592,9 +588,8 @@ class RxUnit:
             baa = copy.deepcopy(data[i*5] * 4.356)
             tpa = copy.deepcopy(data[(i*5)+1] / 2.47105)
             mcs = copy.deepcopy(data[(i*5)+2])
-            osi = copy.deepcopy(data[(i*5)+3])
-            cc = copy.deepcopy(data[(i*5)+4])
-            out.append(StructureSummary(tpa, baa, mcs, osi, cc))
+            cc = copy.deepcopy(data[(i*5)+3])
+            out.append(StructureSummary(tpa, baa, mcs, cc))
         return out
 
 
@@ -699,20 +694,18 @@ class RxUnit:
                                                            ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double),
-                                                           ctypes.POINTER(ctypes.c_double),
                                                            ctypes.POINTER(ctypes.c_double)]
         self._tao_data.dll.getTreatedStructure.restypes = None
         bah = ctypes.c_double(0)
         tph = ctypes.c_double(0)
         mcs = ctypes.c_double(0)
-        osi = ctypes.c_double(0)
         cc = ctypes.c_double(0)
         self._tao_data.dll.getTreatedStructure(ctypes.c_int(self.idx), ctypes.byref(bah), ctypes.byref(tph),
-                                               ctypes.byref(mcs), ctypes.byref(osi), ctypes.byref(cc))
+                                               ctypes.byref(mcs), ctypes.byref(cc))
         tpa = tph.value / 2.47105
         baa = bah.value * 4.356
         cc = cc.value * 100
-        x = StructureSummary(tpa, baa, mcs.value, osi.value, cc)
+        x = StructureSummary(tpa, baa, mcs.value, cc)
         return x
 
     def get_treat_taos_dll(self):
@@ -887,10 +880,10 @@ class LidarDataset:
         self.dll.setSeed.restype = None
         self.dll.setSeed(1)
 
-        self.dll.setProjDataDirectory.restype = None
+        '''self.dll.setProjDataDirectory.restype = None
         self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
         b_dll_path = (os.path.dirname(self._dll_path)+"/share/proj/").encode('utf-8')
-        self.dll.setProjDataDirectory(b_dll_path)
+        self.dll.setProjDataDirectory(b_dll_path)'''
 
         b_root_path = self._root_path.encode('utf-8')
         self.dll.initLidarDataset.argtypes = [ctypes.c_char_p]
@@ -1049,20 +1042,17 @@ class LidarDataset:
             return
         try:
             print("Trying allometry from project shape.")
-            self.dll.setAllometryFiaPath.argtypes = [ctypes.c_char_p]
-            self.dll.setAllometryFiaPath.restype = None
             fiaPath = os.path.dirname(self._dll_path) + "/fia/"
             print("Fia data path is: " + fiaPath)
             fiaPath = fiaPath.encode('utf-8')
-            self.dll.setAllometryFiaPath(fiaPath)
 
-            self.dll.setAllometryWkt.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+            self.dll.setAllometryWkt.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
             self.dll.setAllometryWkt.restype = int
             crsWkt = self.get_wkt()
             wkt = shapely.wkt.dumps(a)
             crsWkt = crsWkt.encode('utf-8')
             wkt = wkt.encode('utf-8')
-            nplots = self.dll.setAllometryWkt(wkt, crsWkt)
+            nplots = self.dll.setAllometryWkt(wkt, crsWkt, fiaPath)
             print("N plots founds: " + str(nplots))
 
             self.dll.getAllometry.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double),
@@ -1107,8 +1097,8 @@ class Allometry:
 
 
 class StructureSummary:
-    def __init__(self, tpa, ba, mcs, osi, cc):
-        self._data = [tpa, ba, mcs, osi, cc]
+    def __init__(self, tpa, ba, mcs, cc):
+        self._data = [tpa, ba, mcs, cc]
 
     def __str__(self):
         return f'''
@@ -1150,9 +1140,5 @@ class StructureSummary:
         return self._data[2]
 
     @property
-    def osi(self):
-        return self._data[3]
-
-    @property
     def cc(self):
-        return self._data[4]
+        return self._data[3]
