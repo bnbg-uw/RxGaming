@@ -880,10 +880,10 @@ class LidarDataset:
         self.dll.setSeed.restype = None
         self.dll.setSeed(1)
 
-        '''self.dll.setProjDataDirectory.restype = None
+        self.dll.setProjDataDirectory.restype = None
         self.dll.setProjDataDirectory.argtypes = [ctypes.c_char_p]
-        b_dll_path = (os.path.dirname(self._dll_path)+"/share/proj/").encode('utf-8')
-        self.dll.setProjDataDirectory(b_dll_path)'''
+        b_dll_path = (os.path.dirname(self._dll_path)).encode('utf-8')
+        self.dll.setProjDataDirectory(b_dll_path)
 
         b_root_path = self._root_path.encode('utf-8')
         self.dll.initLidarDataset.argtypes = [ctypes.c_char_p]
