@@ -1,0 +1,12 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.defaultInterpreterPath": "${env:CONDA_PREFIX}/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "python.analysis.extraPaths": ["${workspaceFolder}/python"],
+    "files.exclude": {
+        "**/build": true
+    }
+}

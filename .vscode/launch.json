@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run RxGaming",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/python/__main__.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Debug Python only",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/python/__main__.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Debug C++ (attach)",
+            "type": "cppvsdbg",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        }
+    ]
+}

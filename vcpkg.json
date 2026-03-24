@@ -1,0 +1,14 @@
+{
+    "name": "rxgaming",
+    "version": "1.0.0",
+    "dependencies": [
+        "hdf5",
+        "nlohmann-json",
+        "pybind11",
+        "boost",
+        "gdal",
+        "proj",
+        "libgeotiff",
+        "xtl"
+    ]
+}

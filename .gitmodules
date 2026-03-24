@@ -1,0 +1,12 @@
+[submodule "src/lapisgis"]
+	path = src/lapisgis
+	url = https://github.com/jontkane/LapisGis
+[submodule "src/lico"]
+	path = src/lico
+	url = https://github.com/jontkane/lico
+[submodule "src/processedfolder"]
+	path = src/processedfolder
+	url = https://github.com/bnbg-uw/ProcessedFolder
+[submodule "src/rxtools"]
+	path = src/rxtools
+	url = https://github.com/bnbg-uw/rxtools

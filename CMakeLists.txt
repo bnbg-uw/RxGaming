@@ -1,0 +1,54 @@
+cmake_minimum_required(VERSION 3.24)
+include_guard(GLOBAL)
+
+project(pyRxTools VERSION 1.1.0)
+
+if(" ${CMAKE_SOURCE_DIR}" STREQUAL " ${CMAKE_BINARY_DIR}")
+  message(FATAL_ERROR "
+FATAL: In-source builds are not allowed.
+       You should create a separate directory for build files.
+")
+endif()
+
+cmake_minimum_required(VERSION 3.20)
+project(rxgaming)
+
+# Submodule dependencies
+add_subdirectory(src/lapisgis)
+add_subdirectory(src/lico)
+add_subdirectory(src/processedfolder)
+add_subdirectory(src/rxtools)
+
+# vcpkg dependencies
+find_package(HDF5 REQUIRED COMPONENTS CXX)
+find_package(nlohmann_json REQUIRED)
+find_package(pybind11 REQUIRED)
+
+# Your source files
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+list(FILTER SOURCES EXCLUDE REGEX "src/(lapisgis|lico|processedfolder|rxtools)/.*")
+
+pybind11_add_module(rxgaming_core ${SOURCES})
+
+target_include_directories(rxgaming_core PRIVATE src/)
+
+target_link_libraries(rxgaming_core PRIVATE
+    HDF5::HDF5
+    nlohmann_json::nlohmann_json
+    lapisgis
+    lico
+    processedfolder
+    rxtools
+)
+
+# Copy built module to python/ folder
+add_custom_command(TARGET rxgaming_core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:rxgaming_core>
+        ${CMAKE_SOURCE_DIR}/python/
+)
+
+target_compile_options(rxgaming_core PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W3 /WX>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Werror>
+)

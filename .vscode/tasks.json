@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build C++",
+            "type": "shell",
+            "command": "cmake --build build/debug --config Debug",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build and Run",
+            "type": "shell",
+            "command": "cmake --build build/debug --config Debug && python python/__main__.py",
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Update submodules",
+            "type": "shell",
+            "command": "git submodule update --remote --revursive --merge --recursive && git add src/lapisgis src/lico src/processedfolder src/rxtools",
+            "problemMatcher": []
+        }
+    ]
+}
