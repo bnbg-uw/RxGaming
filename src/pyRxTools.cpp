@@ -21,28 +21,10 @@ pyRxtools.cpp
 
 #include "graphlico.hpp"
 #include "treatment.hpp"
-#include "rxunit.hpp"
 #include "ReadProcessedFolder.hpp"
 #include "allometry.hpp"
 
 
-class RxGamingRxUnit : public rxtools::RxUnit {
-public:
-    lapis::Raster<int> mhm;
-    lapis::Raster<double> chm;
-    lapis::Raster<int> basinMap;
-    rxtools::TaoList cutTaos;
-    rxtools::treatmentResult result = rxtools::treatmentResult::success;
-
-    RxGamingRxUnit(lapis::Raster<lapis::cell_t> mask, lapis::Raster<int> mhm, lapis::Raster<double> chm, lapis::Raster<int> basinMap,
-        rxtools::TaoList taos) : RxUnit(mask, taos) {
-        this->mhm = mhm;
-        this->chm = chm;
-        this->basinMap = basinMap;
-    };
-
-    RxGamingRxUnit() = default;
-};
 
 static std::vector<lapis::MultiPolygon> rxQ;
 

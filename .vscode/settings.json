@@ -5,6 +5,7 @@
     "python.terminal.activateEnvironment": true,
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.useCMakePresets": "always",
     "python.analysis.extraPaths": ["${workspaceFolder}/python"],
     "files.exclude": {
         "**/build": true

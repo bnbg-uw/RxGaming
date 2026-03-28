@@ -11,6 +11,7 @@
         },
         {
             "name": "debug",
+            "inherits": "base",
             "binaryDir": "${sourceDir}/build/debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
@@ -19,6 +20,7 @@
         },
         {
             "name": "release",
+            "inherits": "base",
             "binaryDir": "${sourceDir}/build/release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",

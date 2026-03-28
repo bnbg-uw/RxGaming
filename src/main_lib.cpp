@@ -1,8 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
-#include "ProjectSettings.h"
-#include "RxUnit.h"
+#include "projectSettings.hpp"
+#include "rxgRxUnit.hpp"
 
 namespace py = pybind11;
 

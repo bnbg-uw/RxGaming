@@ -5,10 +5,13 @@
         "hdf5",
         "nlohmann-json",
         "pybind11",
-        "boost",
+        "boost-geometry",
+        "boost-program-options",
         "gdal",
         "proj",
         "libgeotiff",
-        "xtl"
+        "xtl",
+        "gtest",
+        "eigen3"
     ]
 }
