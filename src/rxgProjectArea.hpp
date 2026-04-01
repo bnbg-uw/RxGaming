@@ -14,6 +14,7 @@ rxgprojectarea.hpp
 #pragma once
 #include "projectSettings.hpp"
 #include "rxgRxUnit.hpp"
+#include "readProcessedFolder.hpp"
 
 namespace rxgaming {
 

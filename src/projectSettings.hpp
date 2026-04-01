@@ -21,6 +21,8 @@ namespace rxgaming {
         std::string unitPolyPath;
         std::string refDataPath;
         std::string mcsPropPath;
+        std::string fiaPath;
+        std::string projDbPath;
         std::string lidarPath;
         std::string unitName;
         std::string savePath;

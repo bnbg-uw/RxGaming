@@ -11,6 +11,7 @@ University of Washington Forest Resilience Lab
 rxgRxUnit.hpp
 */
 
+#include "rxgUtils.hpp"
 #include "rxunit.hpp"
 #include "treatment.hpp"
 #include <pybind11/numpy.h>
@@ -32,36 +33,35 @@ namespace rxgaming {
 
         RxGamingRxUnit() = default;
 
-        // get/set current, target, and treatment structures
-
-        py::array_t<int> get_mask() const;
-        py::array_t<int> get_mhm() const;
+        py::array_t<lapis::cell_t> get_mask() const;
+        py::array_t<lapis::cell_t> get_mhm() const;
         py::array_t<double> get_chm() const;
-        py::array_t<int> get_basin() const;
+        py::array_t<lapis::cell_t> get_basin() const;
         py::array_t<double> get_hillshade() const;
-        py::array_t<int> get_clump_map() const;
-        py::array_t<double> get_tao_points() const;
+        py::array_t<lapis::cell_t> get_clump_map() const;
+        py::array_t<double> get_taos() const;
 
-        py::array_t<int> get_treat_mhm() const;
+        py::array_t<lapis::cell_t> get_treat_mhm() const;
         py::array_t<double> get_treat_chm() const;
-        py::array_t<int> get_treat_basin() const;
+        py::array_t<lapis::cell_t> get_treat_basin() const;
         py::array_t<double> get_treat_hillshade() const;
-        py::array_t<int> get_treat_clump_map() const;
+        py::array_t<lapis::cell_t> get_treat_clump_map() const;
         py::array_t<double> get_treat_taos() const;
 
-        // get simulated structures
+        py::array_t<double> get_cut_taos() const;
+
+        std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
         // get ba dist
         // get treatment/do treatment and treat result
-        // get cut taos
 
     private:
         template <class T>
-        py::array_t<T> raster_to_numpy(const lapis::Raster<T>& r) {
+        py::array_t<T> raster_to_numpy(const lapis::Raster<T>& r) const {
             py::array_t<T> arr({r.nrow(), r.ncol()});
             auto buf = arr.template mutable_unchecked<2>();
 
-            for (rowcol_t i = 0; i < r.nrow(); ++i) {
-                for (rowcol_t j = 0; j < r.ncol(); ++j) {
+            for (lapis::rowcol_t i = 0; i < r.nrow(); ++i) {
+                for (lapis::rowcol_t j = 0; j < r.ncol(); ++j) {
                     auto v = r.atRCUnsafe(i, j);
                     if (v.has_value()) {
                         buf(i, j) = v.value();
@@ -77,6 +77,8 @@ namespace rxgaming {
             return arr;
         }
 
+        py::array_t<double> taolist_to_numpy(rxtools::TaoList taos) const;
         lapis::Raster<double> computeHillshade(const lapis::Raster<double>& chm, double az = 315, double elev = 45);
+        std::vector<size_t> getRawClumps() const;
     };
 } // namespace rxgaming

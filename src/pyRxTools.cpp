@@ -9,7 +9,6 @@ University of Washington Forest Resilience Lab
 2 / 22 / 2026
 
 pyRxtools.cpp
-*/
 
 #include "pyRxTools.hpp"
 
@@ -1077,4 +1076,4 @@ void setConvFactor(double cf) {
 
 void getConvFactor(double* cf) {
     *cf = convFactor;
-}
+}*/
