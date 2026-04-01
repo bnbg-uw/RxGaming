@@ -15,10 +15,9 @@ rxgRxUnit.cpp
 
 namespace rxgaming {
 
-    RxGamingRxUnit::RxGamingRxUnit(std::string name, lapis::Raster<lapis::cell_t> mask, lapis::Raster<int> mhm, lapis::Raster<double> chm, lapis::Raster<int> basinMap,
+    RxGamingRxUnit::RxGamingRxUnit(std::string name, lapis::Raster<lapis::cell_t> mask, lapis::Raster<double> chm, lapis::Raster<int> basinMap,
             rxtools::TaoList taos) : RxUnit(mask, taos) {
             this->name = name;
-            this->mhm = mhm;
             this->chm = chm;
             this->basinMap = basinMap;
             this->hillshade = computeHillshade(chm);
@@ -26,10 +25,6 @@ namespace rxgaming {
 
     py::array_t<lapis::cell_t> RxGamingRxUnit::get_mask() const {
         return raster_to_numpy(unitMask);
-    }
-
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_mhm() const {
-        return raster_to_numpy(mhm);
     }
 
     py::array_t<double> RxGamingRxUnit::get_chm() const {
@@ -79,10 +74,6 @@ namespace rxgaming {
         return taolist_to_numpy(taos);
     }
 
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_treat_mhm() const {
-        
-    }
-
     py::array_t<double> RxGamingRxUnit::get_treat_chm() const {
         std::unordered_set<int> basinIds;
         for (size_t i = 0; i < treatedTaos.size(); ++i) {
@@ -109,7 +100,16 @@ namespace rxgaming {
     }
 
     py::array_t<double> RxGamingRxUnit::get_treat_hillshade() const {
-        
+        auto b = getTreatBasin();
+        auto thisHill = hillshade;
+        for (lapis::cell_t i = 0; i < thisHill.ncell(); ++i) {
+            if (thisHill[i].has_value()) {
+                if (b[i].has_value() && b[i].value() == 1) {
+                    thisHill[i].value() = 200;
+                }
+            }
+        }
+        return(raster_to_numpy(thisHill));
     }
 
     py::array_t<lapis::cell_t> RxGamingRxUnit::get_treat_clump_map() const {

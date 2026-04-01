@@ -37,7 +37,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
             return s[i];
         });
 
-    py::class<rxgaming::ProjectSettings>(m, "ProjectSettings")
+    py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
         .def(py::init<std::string, std::string, std::string,
                       std::string, std::string, std::string, std::string, std::string, int>(),
              py::arg("name"), py::arg("unitPolyPath"), py::arg("refDataPath"), py::arg("mcsPropPath"),
@@ -60,14 +60,12 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def_readwrite("treatedStructure", &rxgaming::RxGamingRxUnit::treatedStructure)
 
         .def("get_mask", &rxgaming::RxGamingRxUnit::get_mask)
-        .def("get_mhm", &rxgaming::RxGamingRxUnit::get_mhm)
         .def("get_chm", &rxgaming::RxGamingRxUnit::get_chm)
         .def("get_basin", &rxgaming::RxGamingRxUnit::get_basin)
         .def("get_hillshade", &rxgaming::RxGamingRxUnit::get_hillshade)
         .def("get_clump_map", &rxgaming::RxGamingRxUnit::get_clump_map)
         .def("get_taos", &rxgaming::RxGamingRxUnit::get_taos)
 
-        .def("get_treat_mhm", &rxgaming::RxGamingRxUnit::get_treat_mhm)
         .def("get_treat_chm", &rxgaming::RxGamingRxUnit::get_treat_chm)
         .def("get_treat_basin", &rxgaming::RxGamingRxUnit::get_treat_basin)
         .def("get_treat_hillshade", &rxgaming::RxGamingRxUnit::get_treat_hillshade)

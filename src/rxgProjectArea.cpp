@@ -66,7 +66,6 @@ namespace rxgaming {
             for(int i = 0; i < unitPolygon.nFeature(); ++i) {
                 auto unit = unitPolygon.getFeature(i);
                 auto name = unit.getStringField(ps.unitName);
-                std::vector<lapis::Raster<int>> mhm;
                 std::vector<lapis::Raster<double>> chm;
                 std::vector<lapis::Raster<int>> basinMap;
                 std::unordered_set<std::string> usedTiles;
@@ -77,12 +76,9 @@ namespace rxgaming {
                             auto e = lidar->extentByTile(j);
                             if (e) {
                                 if (unit.getGeometry().overlapsExtent(e.value())) {
-                                    auto thisMhm = lapis::Raster<int>(processedfolder::stringOrThrow(lidar->maxHeightRaster(j)));
-                                    //thisMhm.repairResolution(expectedRes.first, expectedRes.first, expectedRes.second, expectedRes.second);
                                     auto thisBasinMap = lapis::Raster<int>(processedfolder::stringOrThrow(lidar->watershedSegmentRaster(j))) + i * 10000;
                                     //thisBasinMap.repairResolution(expectedRes.first, expectedRes.first, expectedRes.second, expectedRes.second);
 
-                                    mhm.push_back(thisMhm);
                                     basinMap.push_back(thisBasinMap);
 
                                     auto s = processedfolder::stringOrThrow(lidar->csmRaster(j));
@@ -111,7 +107,7 @@ namespace rxgaming {
                                     for (int k = 0; k < pts.nFeature(); k++) {
                                         auto xy = lidar->coordGetter()(pts.getFeature(k));
                                         if (unitE.contains(xy.x, xy.y)) {
-                                            if (unit.getGeometry().containsPoint(lapis::Point(xy, thisMhm.crs()))) {
+                                            if (unit.getGeometry().containsPoint(lapis::Point(xy, thisBasinMap.crs()))) {
                                                 auto val = thisBasinMap.atXY(xy.x, xy.y);
                                                 if (!val.has_value()) {
                                                     continue;
@@ -139,7 +135,6 @@ namespace rxgaming {
                             }
                             return lapis::mosaicInside(toMerge);
                         };
-                        auto outMhm = mergeVectorInt(mhm);
                         auto outBasin = mergeVectorInt(basinMap);
 
                         auto mergeVectorDouble = [](std::vector<lapis::Raster<double>>& v) {
@@ -152,16 +147,16 @@ namespace rxgaming {
                         auto outChm = mergeVectorDouble(chm);
 
                         auto thisMask = mask;
-                        thisMask = lapis::cropRaster(thisMask, outMhm, lapis::SnapType::out);
+                        thisMask = lapis::cropRaster(thisMask, outBasin, lapis::SnapType::out);
                         thisMask.maskByMultiPolygon(unit.getGeometry());
                         thisMask = lapis::trimRaster(thisMask);
                         
-                        auto tmp = outMhm;
-                        for (lapis::cell_t cell = 0; cell < outMhm.ncell(); ++cell) {
-                            auto x = outMhm.xFromCellUnsafe(cell);
-                            auto y = outMhm.yFromCellUnsafe(cell);
+                        auto tmp = outBasin;
+                        for (lapis::cell_t cell = 0; cell < outBasin.ncell(); ++cell) {
+                            auto x = outBasin.xFromCellUnsafe(cell);
+                            auto y = outBasin.yFromCellUnsafe(cell);
                             if(((lapis::Extent)thisMask).contains(x,y)) {
-                                if (!thisMask.atXY(outMhm.xFromCellUnsafe(cell),outMhm.yFromCellUnsafe(cell)).has_value()) {
+                                if (!thisMask.atXY(outBasin.xFromCellUnsafe(cell),outBasin.yFromCellUnsafe(cell)).has_value()) {
                                     tmp.atCell(cell).has_value() = false;
                                 }
                                 else {
@@ -172,20 +167,16 @@ namespace rxgaming {
                                 tmp.atCell(cell).has_value() = false;
                             }
                         }
-                        outMhm.mask(tmp);
                         outChm.mask(tmp);
                         outBasin.mask(tmp);
 
-                        outMhm = lapis::trimRaster(outMhm);
                         outChm = lapis::trimRaster(outChm);
                         outBasin = lapis::trimRaster(outBasin);
 
-                        outMhm = lapis::cropRaster(outMhm, outChm, lapis::SnapType::out);
-                        outMhm = lapis::extendRaster(outMhm, outChm, lapis::SnapType::in);
                         outBasin = lapis::cropRaster(outBasin, outChm, lapis::SnapType::out);
                         outBasin = lapis::extendRaster(outBasin, outChm, lapis::SnapType::in);
 
-                        localUnits.emplace_back(name, thisMask, outMhm, outChm, outBasin, taos);
+                        localUnits.emplace_back(name, thisMask, outChm, outBasin, taos);
                     }
                     else {
                         continue;

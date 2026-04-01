@@ -22,26 +22,23 @@ namespace rxgaming {
     class RxGamingRxUnit : public rxtools::RxUnit {
     public:
         std::string name;
-        lapis::Raster<int> mhm;
         lapis::Raster<double> chm;
         lapis::Raster<int> basinMap;
         lapis::Raster<double> hillshade;
         rxtools::TaoList cutTaos;
         rxtools::treatmentResult result = rxtools::treatmentResult::success;
 
-        RxGamingRxUnit(std::string name, lapis::Raster<lapis::cell_t> mask, lapis::Raster<int> mhm, lapis::Raster<double> chm, lapis::Raster<int> basinMap, rxtools::TaoList taos);
+        RxGamingRxUnit(std::string name, lapis::Raster<lapis::cell_t> mask, lapis::Raster<double> chm, lapis::Raster<int> basinMap, rxtools::TaoList taos);
 
         RxGamingRxUnit() = default;
 
         py::array_t<lapis::cell_t> get_mask() const;
-        py::array_t<lapis::cell_t> get_mhm() const;
         py::array_t<double> get_chm() const;
         py::array_t<lapis::cell_t> get_basin() const;
         py::array_t<double> get_hillshade() const;
         py::array_t<lapis::cell_t> get_clump_map() const;
         py::array_t<double> get_taos() const;
 
-        py::array_t<lapis::cell_t> get_treat_mhm() const;
         py::array_t<double> get_treat_chm() const;
         py::array_t<lapis::cell_t> get_treat_basin() const;
         py::array_t<double> get_treat_hillshade() const;
@@ -79,6 +76,7 @@ namespace rxgaming {
 
         py::array_t<double> taolist_to_numpy(rxtools::TaoList taos) const;
         lapis::Raster<double> computeHillshade(const lapis::Raster<double>& chm, double az = 315, double elev = 45);
-        std::vector<size_t> getRawClumps() const;
+        std::vector<size_t> getRawClumps(rxtools::TaoList taos) const;
+        lapis::Raster<int> getTreatBasin() const;
     };
 } // namespace rxgaming
