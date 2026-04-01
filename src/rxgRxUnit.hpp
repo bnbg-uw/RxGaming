@@ -49,7 +49,6 @@ namespace rxgaming {
 
         std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
         // get ba dist
-        // get treatment/do treatment and treat result
 
     private:
         template <class T>

@@ -47,7 +47,7 @@ namespace rxgaming {
             for (size_t i = 0; i < taos.size(); ++i) {
                 auto e = clumpMap.extract(taos.x(i), taos.y(i), lapis::ExtractMethod::near);
                 if (e.has_value() && e.value() != 1) {
-                    taoIds.emplace(std::make_pair(e.value(), rawClumps[i]));
+                    taoIds.emplace(std::make_pair(e.value(), (int)rawClumps[i]));
                 }
             }
     
@@ -122,7 +122,7 @@ namespace rxgaming {
             for (size_t i = 0; i < treatedTaos.size(); ++i) {
                 auto e = b.extract(treatedTaos.x(i), treatedTaos.y(i), lapis::ExtractMethod::near);
                 if (e.has_value() && e.value() != 1) {
-                    taoIds.emplace(std::make_pair(e.value(), groupsizes[i]));
+                    taoIds.emplace(std::make_pair(e.value(), (int)groupsizes[i]));
                 }
             }
     

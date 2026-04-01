@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 #include "projectSettings.hpp"
 #include "rxgRxUnit.hpp"
+#include "rxgTreatmentEngine.hpp"
 
 namespace py = pybind11;
 
@@ -38,10 +39,10 @@ PYBIND11_MODULE(rxgaming_core, m) {
         });
 
     py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
-        .def(py::init<std::string, std::string, std::string,
-                      std::string, std::string, std::string, std::string, std::string, int>(),
-             py::arg("name"), py::arg("unitPolyPath"), py::arg("refDataPath"), py::arg("mcsPropPath"),
-             py::arg("fiaPath"), py::arg("projDbPath"), py::arg("lidarPath"), py::arg("unitName"), py::arg("nThread"))
+        .def(py::init<std::string, std::string, std::string, std::string, std::string,
+             std::string, std::string, std::string, std::string, int>(),
+             py::arg("name"), py::arg("unitPolyPath"), py::arg("refDataPath"), py::arg("mcsPropPath"), py::arg("fiaPath"),
+             py::arg("projDbPath"), py::arg("lidarPath"), py::arg("unitName"), py::arg("savePath"),py::arg("nThread"))
         .def_readonly("name", &rxgaming::ProjectSettings::name)
         .def_readonly("unitPolyPath", &rxgaming::ProjectSettings::unitPolyPath)
         .def_readonly("refDataPath", &rxgaming::ProjectSettings::refDataPath)
@@ -75,5 +76,9 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def("get_cut_taos", &rxgaming::RxGamingRxUnit::get_cut_taos)
 
         .def("get_simulated_structures", &rxgaming::RxGamingRxUnit::get_simulated_structures);
+
+    py::class_<rxgaming::TreatmentEngine>(m, "TreatmentEngine")
+        .def(py::init<>())
+        .def("do_treatment", &rxgaming::TreatmentEngine::do_treatment);
 
 }
