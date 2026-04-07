@@ -19,10 +19,9 @@ rxgprojectarea.hpp
 namespace rxgaming {
 
     class RxGamingProjectArea {
-    private:
-        std::vector<RxGamingRxUnit> rxUnits;
-
     public:
+        std::vector<RxGamingRxUnit> rxUnits;
+        
         RxGamingProjectArea(const ProjectSettings& ps);
         
     };

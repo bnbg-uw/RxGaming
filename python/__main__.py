@@ -9,46 +9,74 @@ University of Washington Forest Resilience Lab
 12/6/2024
 
 __main__.py
-This is the entry point to the tool. We use fman build system to build the executable: https://build-system.fman.io/
+Application entry point for running RxGaming with a standard PySide6 startup flow.
 """
 
-from fbs_runtime.application_context.PyQt5 import ApplicationContext, cached_property
-from activity import Activity, LoadStateActivity
-from projectsettingsactivity import ProjectSettingsActivity
+from __future__ import annotations
+
+from pathlib import Path
 import sys
 import traceback
+from typing import Any
 
-# This makes fman build system work with our Acitivty class which is how we switch between windows in this program.
-class AppContext(ApplicationContext):
-    def __init__(self):
-        super(AppContext, self).__init__()
+from activity import Activity, LoadStateActivity
+from projectsettingsactivity import ProjectSettingsActivity
+
+
+def _base_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+def _first_existing_path(*candidates: Path) -> Path:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        "Could not locate any of the required startup resources:\n"
+        + "\n".join(str(candidate) for candidate in candidates)
+    )
+
+
+def resolve_prop_table_path(base_path: Path | None = None) -> Path:
+    root = base_path or _base_path()
+    return _first_existing_path(
+        root / "resources" / "mcs_prop.csv",
+        root / "mcs_prop.csv",
+    )
+
+
+class AppContext:
+    """Coordinates application startup and activity selection."""
+
+    def __init__(self) -> None:
         self._to_start = ProjectSettingsActivity
 
-    def run(self, **kwargs):                              # 2. Implement run()
-        Activity.Start_Activity(LoadStateActivity, saved_state={'onLoad': self.onLoad})
-        Activity.Try_To_Save = True
-        Activity.Start_Activity(self._to_start, **kwargs)
+    def run(self, **kwargs: Any) -> None:
+        Activity.start_activity(LoadStateActivity, saved_state={"onLoad": self.on_load})
+        Activity.try_to_save = True
+        Activity.start_activity(self._to_start, **kwargs)
 
-
-    def onLoad(self, saved_state):
+    def on_load(self, saved_state: dict[str, Any]) -> None:
         if "LastActivity" in saved_state:
             self._to_start = saved_state["LastActivity"]
 
-    @cached_property
-    def app(self):
-        return Activity._App
 
-
-# In theory we need something more elegant here.
-def handle_exception(exc_type, exc_value, exc_traceback):
+def handle_exception(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: Any) -> None:
     print("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
     sys.exit(1)
 
 
-if __name__ == '__main__':
+def main() -> int:
     sys.excepthook = handle_exception
-    appctxt = AppContext()
-    prop_table = appctxt.get_resource("mcs_prop.csv")
-    dll = appctxt.get_resource("bin/pyRxTools.dll")
-    appctxt.run(prop_table_path=prop_table, dll_path=dll)
-    sys.exit()
+
+    app_context = AppContext()
+    prop_table_path = resolve_prop_table_path()
+    app_context.run(prop_table_path=str(prop_table_path))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

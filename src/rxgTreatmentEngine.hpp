@@ -20,7 +20,7 @@ namespace rxgaming {
     public:
         TreatmentEngine() : treater() {};
 
-        inline void do_treatment(RxgRxUnit& unit, double dbhMin, double dbhMax) {
+        inline void do_treatment(RxGamingRxUnit& unit, double dbhMin, double dbhMax) {
             try {
                 auto trt =  treater.doTreatment(unit, dbhMin, dbhMax, 10, false, "E:/dropbox/rxgaming paper/treatmentvisual/data/");
                 unit.treatedTaos = std::get<0>(trt);
@@ -31,7 +31,7 @@ namespace rxgaming {
                     lapis::Alignment((lapis::Extent)unit.unitMask, 1, 1),
                     unit.areaHa);
             }
-            catch (std::exception e) {
+            catch (std::exception& e) {
                 std::cout << e.what();
                 std::abort();
             }

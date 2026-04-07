@@ -12,20 +12,28 @@ gamingactivity.py
 This file is the UI for the "gaming" side of the tool, after project settings processing has been completed.
 """
 
+from __future__ import annotations
+
 # General
 import numpy as np
 import os
+from pathlib import Path
+from typing import Any
 
 # QT
-from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QTabWidget, QWidget, QLabel, QListView,
-                             QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QAction, QApplication,
-                             QMessageBox)
-from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QModelIndex
-from PyQt5 import QtPrintSupport, QtGui
+from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QTabWidget, QWidget, QLabel, QListView,
+                               QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QApplication,
+                               QMessageBox)
+from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
+from PySide6.QtGui import QAction
+from PySide6 import QtPrintSupport, QtGui
 
 # RxGaming
 from activity import Activity, SaveStateActivity
-from QtWidgets import SliderWithValue, QMainWindowRx  # custom widgets
+from gaming_export import export_current_view, export_features, export_raster, export_treelist
+from gaming_tabs import GamingTabs
+from rxgaming_core import ProjectSettings, RxGamingProjectArea
+from widgets import SliderWithValue, QMainWindowRx  # custom widgets
 
 # IO
 from shapely.geometry import mapping, Point, Polygon as ShpPolygon  # for displaying on ref plots & for writing .shp
@@ -41,7 +49,7 @@ import pickle  # For saving the whole program
 
 # Graphics
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # Allows us to redner plots in widgets.
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # Allows us to render plots in widgets.
 import descartes  # For polygons on ref plots
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch, Polygon as MplPolygon
@@ -55,161 +63,165 @@ import seaborn # reference 2d KDE plots
 # GamingActivity class
 # Handles user input and interactions with the projectsettings and surfaces data and treatment results
 class GamingActivity(Activity):
-    def on_start(self, saved_state, **kwargs):
-        self.dll_path = kwargs['dll_path']  #find the link to the dll that does the treatment operations
-        # Set up the mainwindow
+    """Main activity for viewing units and running treatments."""
+
+    def on_start(self, saved_state: dict[str, Any], **kwargs: Any) -> None:
+        del kwargs
         self.set_window(QMainWindowRx())
         self.central_widget = QWidget()
         self.window.setCentralWidget(self.central_widget)
 
-        # set up the window settings, saved state, and tabs.
         self.saved_state = saved_state
-        project_settings = saved_state["ProjectSettings"]
-        self.tab_widget = Tabs(saved_state, self.dll_path)
-        self.layout  = QVBoxLayout()
-        self.layout.addWidget(self.tab_widget)
-        self.central_widget.setLayout(self.layout)
-        self.window.setWindowTitle(project_settings.get_name() + " Gaming. Rxgaming tool version: " + Activity.version)
+        self.project_settings = self._load_project_settings(saved_state)
+        self.project_area = RxGamingProjectArea(self.project_settings)
+        self.tab_widget = GamingTabs(self.project_settings, self.project_area, saved_state)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.tab_widget)
+        self.central_widget.setLayout(layout)
+
+        self.window.setWindowTitle(f"{self.project_settings.name} Gaming. Rxgaming tool version: {Activity.version}")
         self.window.setGeometry(200, 200, 1800, 1000)
-        self.window.setMinimumSize(1800, 1000)
+        self.window.setMinimumSize(1200, 800)
         self.window.showMaximized()
 
-        # Set up the menu bar
-        self.save_action = QAction("&Save")
+        self._create_actions()
+        self._create_menu()
+
+        autosave_path = saved_state.get("Autosave_path")
+        if autosave_path:
+            SaveStateActivity.write_file(autosave_path, self.save())
+
+    def save(self) -> dict[str, Any]:
+        saved_state = {
+            "ProjectSettings": self._serialize_project_settings(self.project_settings),
+            "GamingActivity.selected_unit": self.tab_widget.current_unit_index(),
+            "GamingActivity.raster_mode": self.tab_widget.current_raster_mode(),
+            "GamingActivity.show_treatment": self.tab_widget.showing_treatment_view(),
+            "GamingActivity.dbh_min": self.tab_widget.dbh_min(),
+            "GamingActivity.dbh_max": self.tab_widget.dbh_max(),
+            "LastActivity": type(self),
+        }
+        if "save_file_location" in self.saved_state:
+            saved_state["save_file_location"] = self.saved_state["save_file_location"]
+        return saved_state
+
+    def menu_save(self) -> None:
+        save_file_location = self.saved_state.get("save_file_location")
+        if save_file_location:
+            save_path = Path(save_file_location)
+            if save_path.is_file():
+                SaveStateActivity.write_file(save_path, self.save())
+                return
+        self.menu_save_as()
+
+    def menu_save_as(self) -> None:
+        SaveStateActivity.prompt_and_save(self, self.save())
+
+    def menu_exit(self) -> None:
+        self.stop()
+
+    def export_tif(self) -> None:
+        export_current_view(self.tab_widget, self.window)
+
+    def export_rasters(self) -> None:
+        export_raster(self.tab_widget, self.window)
+
+    def export_features(self) -> None:
+        export_features(self.tab_widget, self.window)
+
+    def export_treelists(self) -> None:
+        export_treelist(self.tab_widget, self.window)
+
+    @staticmethod
+    def license() -> None:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(
+            "Copyright (C) 2024  University of Washington\n\n"
+            "This program is free software: you can redistribute it and/or modify it under the terms "
+            "of the GNU General Public License as published by the Free Software Foundation, either "
+            "version 3 of the License, or (at your option) any later version.\n\n"
+            "This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; "
+            "without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. "
+            "See the GNU General Public License for more details.\n\n"
+            "You should have received a copy of the GNU General Public License along with this program. "
+            "If not, see https://www.gnu.org/licenses/."
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
+    def _create_actions(self) -> None:
+        self.save_action = QAction("&Save", self.window)
         self.save_action.setShortcut("Ctrl+S")
         self.save_action.triggered.connect(self.menu_save)
 
-        self.save_as_action = QAction("&Save as")
+        self.save_as_action = QAction("&Save as", self.window)
         self.save_as_action.setShortcut("Ctrl+Shift+S")
         self.save_as_action.triggered.connect(self.menu_save_as)
 
-        self.exit_action = QAction("&Exit")
+        self.exit_action = QAction("&Exit", self.window)
         self.exit_action.setShortcut("Ctrl+Q")
         self.exit_action.triggered.connect(self.menu_exit)
 
-        self.export_tif_action = QAction("&Export window- geotiff (\".tif\")")
+        self.export_tif_action = QAction('&Export window image ("*.png")', self.window)
         self.export_tif_action.triggered.connect(self.export_tif)
 
-        self.export_rasters_action = QAction("&Export raster data (\".tif\")")
+        self.export_rasters_action = QAction('&Export raster data ("*.npy")', self.window)
         self.export_rasters_action.triggered.connect(self.export_rasters)
 
-        self.export_features_action = QAction("&Export shapefile data (\".shp\")")
+        self.export_features_action = QAction('&Export point data ("*.csv")', self.window)
         self.export_features_action.triggered.connect(self.export_features)
 
-        self.export_treelists_action = QAction("&Export treelists (\".csv\")")
+        self.export_treelists_action = QAction('&Export treelists ("*.csv")', self.window)
         self.export_treelists_action.triggered.connect(self.export_treelists)
 
-        self.print_action = QAction("&Print")
-        self.print_action.triggered.connect(self.print)
-
-        self.license_action = QAction("&License")
+        self.license_action = QAction("&License", self.window)
         self.license_action.triggered.connect(self.license)
 
-        self.main_menu = self.window.menuBar()
-        self.file_menu = self.main_menu.addMenu("File")
-        self.export_menu = self.file_menu.addMenu("Export")
-        #self.file_menu.addAction(self.print_action)
+    def _create_menu(self) -> None:
+        main_menu = self.window.menuBar()
+        file_menu = main_menu.addMenu("File")
+        export_menu = file_menu.addMenu("Export")
 
-        self.file_menu.addAction(self.save_action)
-        self.file_menu.addAction(self.save_as_action)
-        self.file_menu.addAction(self.license_action)
-        self.file_menu.addAction(self.exit_action)
+        file_menu.addAction(self.save_action)
+        file_menu.addAction(self.save_as_action)
+        file_menu.addAction(self.license_action)
+        file_menu.addAction(self.exit_action)
 
-        self.export_menu.addAction(self.export_rasters_action)
-        self.export_menu.addAction(self.export_features_action)
-        self.export_menu.addAction(self.export_tif_action)
-        self.export_menu.addAction(self.export_treelists_action)
-
-        # If the user specified they wanted to autosave after the initial processing, do that here.
-        if "Autosave_path" in saved_state:
-            if saved_state['Autosave_path'] is not None:
-                SaveStateActivity.write_file(file_path=self.saved_state['Autosave_path'], saved_state=self.save())
-                self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
-
-    # Implement the method called when the activity closes.
-    def save(self):
-        saved_state = dict()
-        self.tab_widget.project_settings.prj_area.prepToPickle()
-
-        saved_state['ProjectSettings'] = self.tab_widget.project_settings
-        saved_state['GamingActivity.tabs.rx_units'] = self.tab_widget.rx_units
-        saved_state['GamingActivity.tabs.decision_spaces'] = self.tab_widget.decision_spaces
-        saved_state['GamingActivity.tabs.hills'] = self.tab_widget.hills
-        saved_state['GamingActivity.tabs.model_index_row'] = self.tab_widget.stand_tab_list_view.currentIndex().row()
-        saved_state['GamingActivity.tabs.viewmode'] = self.tab_widget.raster_viewmode.currentIndex()
-        saved_state['GamingActivity.tabs.treatmethod'] = self.tab_widget.treatment_method.currentIndex()
-        saved_state['GamingActivity.tabs.cut_range'] = self.tab_widget.cut_range.value()
-        saved_state['LastActivity'] = type(self)
-        if 'save_file_location' in self.saved_state:
-            saved_state['save_file_location'] = self.saved_state['save_file_location']
-        return saved_state
-
-    # action for a user instantiated save.
-    def menu_save(self):
-        if 'save_file_location' in self.saved_state:
-            print(self.saved_state['save_file_location'])
-            if type(self.saved_state['LastActivity']) is not type(self):
-                msg = QMessageBox()
-                msg.setText("The file you are saving to is a project settings instance, would you like to overwrite?")
-                msg.setWindowTitle("Overwrite save state?")
-                msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-                msg.buttonClicked.connect(self.menu_save_connect)
-                msg.exec_()
-            else:
-                if os.path.isfile(self.saved_state['save_file_location']):
-                    self.menu_save_success()
-                else:
-                    self.menu_save_as()
-        else:
-            self.menu_save_as()
-
-    def menu_save_success(self):
-        with open(self.saved_state['save_file_location'], 'wb') as fp:
-            pickle.dump(self.save(), fp)
-        self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
-
-    def menu_save_connect(self, i):
-        print(i.text())
-        if i.text() == "&Yes":
-            self.menu_save_success()
-        else:
-            self.menu_save_as()
-
-    def menu_save_as(self):
-        SaveStateActivity.prompt_and_save(SaveStateActivity, self.save())
-        self.tab_widget.project_settings.prj_area.dePickle(self.dll_path)
-
-    def menu_exit(self):
-        self.stop()
-
-    def export_tif(self):
-        self.tab_widget.export_tif()
-
-    def export_rasters(self):
-        self.tab_widget.export_raster()
-
-    def export_features(self):
-        self.tab_widget.export_features()
-
-    def export_treelists(self):
-        self.tab_widget.export_treelist()
-
-    def print(self):
-        self.tab_widget.print()
+        export_menu.addAction(self.export_rasters_action)
+        export_menu.addAction(self.export_features_action)
+        export_menu.addAction(self.export_tif_action)
+        export_menu.addAction(self.export_treelists_action)
 
     @staticmethod
-    def license():
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("""
-            Copyright (C) 2024  University of Washington\n
-            This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n
-            This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-            You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.\n
-            """)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+    def _serialize_project_settings(project_settings: ProjectSettings) -> dict[str, Any]:
+        return {
+            "name": project_settings.name,
+            "unitPolyPath": project_settings.unitPolyPath,
+            "refDataPath": project_settings.refDataPath,
+            "mcsPropPath": project_settings.mcsPropPath,
+            "fiaPath": project_settings.fiaPath,
+            "projDbPath": project_settings.projDbPath,
+            "lidarPath": project_settings.lidarPath,
+            "unitName": project_settings.unitName,
+            "savePath": project_settings.savePath,
+            "nThread": project_settings.nThread,
+        }
 
+    @classmethod
+    def _load_project_settings(cls, saved_state: dict[str, Any]) -> ProjectSettings:
+        project_settings = saved_state["ProjectSettings"]
+        if isinstance(project_settings, ProjectSettings):
+            return project_settings
+        if isinstance(project_settings, dict):
+            return ProjectSettings(**project_settings)
+        raise TypeError("Saved ProjectSettings must be an rxgaming_core.ProjectSettings or a serialized settings dict.")
+
+
+"""
+Legacy gaming UI implementation retained below only as migration reference.
+Current tab logic lives in ``gaming_tabs.py`` and export helpers live in ``gaming_export.py``.
 
 # The majority of the UI sits inside these tabs.
 class Tabs(QTabWidget):
@@ -1460,3 +1472,4 @@ class Treatment:
         self.hill = hill
         self.basin = basin
         self.tao_pts = tao_pts
+"""

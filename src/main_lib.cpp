@@ -2,7 +2,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include "projectSettings.hpp"
-#include "rxgRxUnit.hpp"
+#include "rxgProjectArea.hpp"
 #include "rxgTreatmentEngine.hpp"
 
 namespace py = pybind11;
@@ -21,7 +21,9 @@ namespace py = pybind11;
         */
 
 PYBIND11_MODULE(rxgaming_core, m) {
+    m.def("set_proj_db_path", &rxgaming::set_proj_db_path, "Set the PROJ data directory path");
     m.def("set_seed", &rxgaming::set_seed, "Set the random seed");
+    m.def("get_ba_dist", &rxgaming::get_ba_dist, "Get the basal area distribution");
     
     py::class_<rxtools::StructureSummary>(m, "StructureSummary")
         .def_readwrite("ba", &rxtools::StructureSummary::ba)
@@ -37,6 +39,11 @@ PYBIND11_MODULE(rxgaming_core, m) {
             if (i < 0 || i > 3) throw py::index_error();
             return s[i];
         });
+
+    py::enum_<rxtools::treatmentResult>(m, "TreatmentResult")
+        .value("success", rxtools::treatmentResult::success)
+        .value("diameterFailure", rxtools::treatmentResult::diameterFailure)
+        .value("cuttingFailure", rxtools::treatmentResult::cuttingFailure);
 
     py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
         .def(py::init<std::string, std::string, std::string, std::string, std::string,
@@ -56,6 +63,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
     py::class_<rxgaming::RxGamingRxUnit>(m, "RxUnit")
         .def_readonly("name", &rxgaming::RxGamingRxUnit::name)
         .def_readonly("areaHa", &rxgaming::RxGamingRxUnit::areaHa)
+        .def_readwrite("result", &rxgaming::RxGamingRxUnit::result)
         .def_readwrite("currentStructure", &rxgaming::RxGamingRxUnit::currentStructure)
         .def_readwrite("targetStructure", &rxgaming::RxGamingRxUnit::targetStructure)
         .def_readwrite("treatedStructure", &rxgaming::RxGamingRxUnit::treatedStructure)
@@ -80,5 +88,8 @@ PYBIND11_MODULE(rxgaming_core, m) {
     py::class_<rxgaming::TreatmentEngine>(m, "TreatmentEngine")
         .def(py::init<>())
         .def("do_treatment", &rxgaming::TreatmentEngine::do_treatment);
-
+    
+    py::class_<rxgaming::RxGamingProjectArea>(m, "RxGamingProjectArea")
+        .def(py::init<const rxgaming::ProjectSettings&>())
+        .def_readwrite("rxUnits", &rxgaming::RxGamingProjectArea::rxUnits);
 }

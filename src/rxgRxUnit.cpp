@@ -243,7 +243,7 @@ namespace rxgaming {
             std::abort();
         }
     }
-
+        
     py::array_t<double> RxGamingRxUnit::taolist_to_numpy(rxtools::TaoList taos) const {
         py::array_t<double> arr({(py::ssize_t)taos.size(), (py::ssize_t)5});
         auto buf = arr.mutable_unchecked<2>();

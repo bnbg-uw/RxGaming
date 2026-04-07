@@ -11,6 +11,7 @@ University of Washington Forest Resilience Lab
 rxgRxUnit.hpp
 */
 
+#pragma once
 #include "rxgUtils.hpp"
 #include "rxunit.hpp"
 #include "treatment.hpp"
@@ -48,7 +49,6 @@ namespace rxgaming {
         py::array_t<double> get_cut_taos() const;
 
         std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
-        // get ba dist
 
     private:
         template <class T>

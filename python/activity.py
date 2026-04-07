@@ -1,6 +1,7 @@
+
 """
-    Copyright (C) 2024  University of Washington
-    This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Copyright (C) 2024  University of Washington
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with this program.  If not, see https://www.gnu.org/licenses/.
 
@@ -12,14 +13,30 @@ activity.py
 Custom framework for managing Qt windowing and application lifecycle, as well as saving/loading
 persistent state information.
 """
-
+from __future__ import annotations
+from abc import ABC, abstractmethod
 from enum import Enum, auto
-from abc import *
 import pickle
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFileDialog, QMessageBox
-from PyQt5.QtCore import Qt
-from QtWidgets import QWindow
+from pathlib import Path
+from typing import Any, ClassVar, Mapping
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFileDialog, QMessageBox
+
+from widgets import QWindow
+
+
+SavedState = dict[str, Any]
+
+
+def _get_qapplication() -> QApplication:
+    instance = QApplication.instance()
+    if instance is None:
+        return QApplication([])
+    assert isinstance(instance, QApplication)
+    return instance
+
 
 class WindowMode(Enum):
     """Enumeration of relationships between parent activity and child activities."""
@@ -37,50 +54,46 @@ class WindowMode(Enum):
        newly created ``Activity`` re-instantiated from the ``saved_state`` of the old parent object.
     """
 
-
-# Define dummy class to use for function signature type specs
-class Activity:
-    pass
-
 # Activity class (abstract base class)
 #  Activities represent the basic unit of UI organization
 #  Equivalent to one task, screen, view, etc.
-#  Activities are created using the static Start_Activity factory method
+#  Activities are created using the static start_activity factory method
 #  Concrete subclasses need to implement on_start and save methods
 class Activity(ABC):
     """Abstract base class for creating and managing activities.
     
     An activity is a single window with a simple lifecycle and the ability to save to/load from persistent states.
     Activities are defined by inheriting from this class and implementing the ``on_start`` and ``save`` methods.
-    They are created via the ``Activity.Start_Activity`` static factory method, not by direct instantiation."""
+    They are created via the ``Activity.start_activity`` static factory method, not by direct instantiation."""
     
-    _App = QApplication([])  # The single instance of Qt application
-    _Activities = []  # List of current activities. Exists so that activities don't get garbage collected
-    _Saved_State = {}  # Key/value pairs for all info that should be persistent across instances
-    _Stopping = False  # Flag, True when application is shutting down
+    _app: ClassVar[QApplication] = _get_qapplication()
+    _activities: ClassVar[list[Activity]] = []  # List of current activities. Exists so that activities don't get garbage collected
+    _saved_state: ClassVar[SavedState] = {}  # Key/value pairs for all info that should be persistent across instances
+    _starting: ClassVar[bool] = False
+    _stopping: ClassVar[bool] = False  # Flag, True when application is shutting down
     version = "1.0.11"
     
-    Try_To_Save = False
+    try_to_save = False
     """Set to ``True`` if you want the application to prompt the user to save when exiting."""
     
-    def __init__(self, parent_activity: Activity, window_mode: WindowMode):
+    def __init__(self, parent_activity: Activity | None, window_mode: WindowMode):
         self._parent = parent_activity
         self._window_mode = window_mode
         self.window = QWindow()
         if self._window_mode is WindowMode.Modal:
-            self.window.setWindowModality(Qt.ApplicationModal)  # TODO: set window hierarchy right so we can use WindowModal
-        self.window.setOnClosed(self._onWindowClose)
+            self.window.setWindowModality(Qt.WindowModality.ApplicationModal)  # TODO: set window hierarchy right so we can use WindowModal
+        self.window.set_on_closed(self._on_window_close)
 
-    def set_window(self, window):
+    def set_window(self, window: QWindow) -> None:
         self.window = window
-        if self.window.onClosed is None:
-            self.window.setOnClosed(self._onWindowClose)
+        if self.window.on_closed is None:
+            self.window.set_on_closed(self._on_window_close)
     
     # Each concrete subclass must implement this
     # Called after the window is set up
     # Responsible for setting up UI, callbacks, and loading from saved_state
     @abstractmethod
-    def on_start(self, saved_state: dict):  # TODO: think about passing window as argument
+    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:  # TODO: think about passing window as argument
         """Lifecycle event callback, called after the `Activity`'s window is set up.
         
         Each concrete subclass must implement this method. This is the place to set up the UI,
@@ -123,7 +136,7 @@ class Activity(ABC):
         ...
     
     @abstractmethod
-    def save(self) -> dict:
+    def save(self) -> SavedState:
         """Lifecycle event callback, called after the window is closed.
         
         Each concrete subclass must implement this. This is the time to save off all data required to
@@ -138,42 +151,43 @@ class Activity(ABC):
         """
         ...
     
-    def stop(self):
+    def stop(self) -> None:
         """Stops activity, closes window, and returns control to parent.
         
         If this activity has no parent, then control goes to the most recently created rootless
         (parent is ``None``) running activity. If there are no running activities, then the application
-        will quit. In this event, if ``Try_To_Save`` is ``True``, then a ``SaveStateActivity`` will be
+        will quit. In this event, if ``try_to_save`` is ``True``, then a ``SaveStateActivity`` will be
         created to handle saving off instances.
         """
         self.window.close()
     
-    def _onWindowClose(self, window: QWindow):
+    def _on_window_close(self, window: QWindow) -> None:
         """Callback for window closed event.
         
         Hooks in here to get instance, then passes to static method.
         """
-        Activity._FinishActivity(self)
+        self._finish_activity(self)
     
     # Clean up after an activity
     #  Deal with saving state
     #  Remove from list of activities (thus it will be garbage-collected)
     #  Return focus to parent window
     @staticmethod
-    def _FinishActivity(activity: Activity):
+    def _finish_activity(activity: Activity) -> None:
         """Clean up after an activity.
         
         . Deal with saving state
         . Remove from list of activities (thus it will be garbage-collected)
         . Return focus to parent window or quit application
         """
-        Activity._Saved_State.update(activity.save())
-        Activity._Activities.remove(activity)
-        if Activity._Starting or Activity._Stopping:
+        Activity._saved_state.update(activity.save())
+        if activity in Activity._activities:
+            Activity._activities.remove(activity)
+        if Activity._starting or Activity._stopping:
             return
         
         # Deal with child activities -- kill off children, reassign siblings
-        children = [a for a in Activity._Activities if a._parent is activity]
+        children = [a for a in Activity._activities if a._parent is activity]
         for c in children:
             if c._window_mode is WindowMode.Sibling:
                 c._parent = activity._parent
@@ -182,27 +196,32 @@ class Activity(ABC):
         
         # Figure out who gets control next
         if activity._parent is None:  # In this case, find the last activity in the list that is a root activity
-            root_activities = [a for a in Activity._Activities if a._parent is None]
+            root_activities = [a for a in Activity._activities if a._parent is None]
             if len(root_activities) > 0:
                 root_activities[-1].window.activateWindow()
         elif activity._window_mode is WindowMode.Modal or activity._window_mode is WindowMode.Sibling or \
              activity._window_mode is WindowMode.SimultaneousParent:
             activity._parent.window.activateWindow()
         elif activity._window_mode is WindowMode.ExclusiveParent:
-            Activity.Start_Activity(type(activity._parent), activity._parent._parent, Activity._Saved_State)
+            Activity.start_activity(type(activity._parent), activity._parent._parent, Activity._saved_state)
         
         # If all activities are closed, then we save and quit
-        if len(Activity._Activities) == 0 and Activity.Try_To_Save:
-            Activity._Stopping = True
-            Activity._Saved_State.update({"LastActivity": type(activity)})
-            Activity.Start_Activity(SaveStateActivity, None, Activity._Saved_State)
+        if len(Activity._activities) == 0 and Activity.try_to_save:
+            Activity._stopping = True
+            Activity._saved_state.update({"LastActivity": type(activity)})
+            Activity.start_activity(SaveStateActivity, None, Activity._saved_state)
     
     # Factory method for starting a new activity
     # Call this instead of creating Activity instances directly through constructor
     # Pass in a parent activity unless the Activity you are starting will be the root
     @staticmethod
-    def Start_Activity(activity_class_to_start: Activity, parent_activity: Activity=None,
-                       saved_state: dict={}, window_mode: WindowMode=WindowMode.SimultaneousParent, **kwargs):
+    def start_activity(
+        activity_class_to_start: type[Activity],
+        parent_activity: Activity | None = None,
+        saved_state: Mapping[str, Any] | None = None,
+        window_mode: WindowMode = WindowMode.SimultaneousParent,
+        **kwargs: Any,
+    ) -> Activity | None:
         """Factory method for creating and starting a new activity.
         
         Call this instead of creating ``Activity`` instances through the constructor.
@@ -221,21 +240,43 @@ class Activity(ABC):
         .. |WindowMode link| replace:: ``WindowMode``
         .. _WindowMode link: activity.WindowMode.html
         """
-        Activity._Starting = True
-        Activity._Saved_State.update(saved_state)
+        Activity._starting = True
+        state_update = dict(saved_state or {})
+        Activity._saved_state.update(state_update)
         current_activity = activity_class_to_start(parent_activity, window_mode)
-        current_activity.on_start(Activity._Saved_State, **kwargs)
-        if window_mode is WindowMode.ExclusiveParent and parent_activity is not None:
-            parent_activity.stop()
-        current_activity.window.show()
-        current_activity.window.activateWindow()
-        Activity._Activities.append(current_activity)
-        Activity._Starting = False
-        if Activity._App.applicationState() == Qt.ApplicationInactive:
+
+        try:
+            current_activity.on_start(dict(Activity._saved_state), **kwargs)
+            if window_mode is WindowMode.ExclusiveParent and parent_activity is not None:
+                parent_activity.stop()
+            current_activity.window.show()
+            current_activity.window.activateWindow()
+            Activity._activities.append(current_activity)
+        finally:
+            Activity._starting = False
+
+        if Activity._app.applicationState() == Qt.ApplicationState.ApplicationInactive:
             if hasattr(Activity, "test"):
                 return current_activity
-            else:
-                Activity._App.exec_()
+            Activity._app.exec()
+
+        return current_activity
+
+    @staticmethod
+    def _show_message(
+        icon: QMessageBox.Icon,
+        title: str,
+        text: str,
+        informative_text: str | None = None,
+    ) -> None:
+        msg = QMessageBox()
+        msg.setIcon(icon)
+        msg.setText(text)
+        if informative_text is not None:
+            msg.setInformativeText(informative_text)
+        msg.setWindowTitle(title)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
 
 
 class SaveStateActivity(Activity):
@@ -247,10 +288,10 @@ class SaveStateActivity(Activity):
     
     Usage is like any other activity::
     
-        Activity.Start_Activity(SaveStateActivity)
+        Activity.start_activity(SaveStateActivity)
     """
     
-    def on_start(self, saved_state):
+    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
         """"""
         self.label = QLabel("Would you like to save your work?")
         self.yes_button = QPushButton("Yes")
@@ -270,32 +311,31 @@ class SaveStateActivity(Activity):
         
         self.saved_state = saved_state
     
-    def save(self):
+    def save(self) -> SavedState:
         """"""
         return {}
     
-    def yes_clicked(self, button):
+    def yes_clicked(self, checked: bool = False) -> None:
         self.prompt_and_save(self.saved_state)
         self.stop()
 
-    def prompt_and_save(self, saved_state):
+    def prompt_and_save(self, saved_state: Mapping[str, Any]) -> None:
         file_path = QFileDialog.getSaveFileName(None, "Save as...", "", "*.dat")[0]
         if file_path == "":
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
-            msg.setText("Please select a file (.dat) to save your work")
-            msg.setWindowTitle("Choose a file")
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Choose a file",
+                "Please select a file (.dat) to save your work",
+            )
             return
         self.write_file(file_path, saved_state)
 
     @staticmethod
-    def write_file(file_path, saved_state):
-        with open(file_path, "wb") as fp:
-            pickle.dump(saved_state, fp)
+    def write_file(file_path: str | Path, saved_state: Mapping[str, Any]) -> None:
+        with Path(file_path).open("wb") as fp:
+            pickle.dump(dict(saved_state), fp)
 
-    def no_clicked(self, button):
+    def no_clicked(self, checked: bool = False) -> None:
         self.stop()
 
 
@@ -321,14 +361,14 @@ class LoadStateActivity(Activity):
         
         def main():
             main.to_start = NewProjectActivity
-            Activity.Start_Activity(LoadStateActivity, saved_state={"onLoad": on_loaded})
-            Activity.Start_Activity(main.to_start)
+            Activity.start_activity(LoadStateActivity, saved_state={"onLoad": on_loaded})
+            Activity.start_activity(main.to_start)
     """     
     
-    def on_start(self, saved_state):
+    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
         """"""
-        self.onLoad = saved_state["onLoad"] if "onLoad" in saved_state else None
-        Activity._Saved_State = {}
+        self.on_load = saved_state.get("onLoad")
+        Activity._saved_state = {}
         
         # TODO make strings a declarative setting/localizable
         self.label = QLabel("What would you like to do?")
@@ -345,27 +385,26 @@ class LoadStateActivity(Activity):
         self.load_button.clicked.connect(self.load_clicked)
         self.new_button.clicked.connect(self.new_clicked)
     
-    def save(self):
+    def save(self) -> SavedState:
         """"""
         return {}
     
-    def load_clicked(self, button):
+    def load_clicked(self, checked: bool = False) -> None:
         file_path = QFileDialog.getOpenFileName(self.window, "Open...", "", "*.dat")[0]
         if file_path == "":
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
-            msg.setText("Please select a file (.dat) to open")
-            msg.setWindowTitle("Choose a file")
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec_()
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Choose a file",
+                "Please select a file (.dat) to open",
+            )
             return
-        with open(file_path, "rb") as fp:
+        with Path(file_path).open("rb") as fp:
             saved_state = pickle.load(fp)
             saved_state['save_file_location'] = file_path
-        Activity._Saved_State = saved_state
-        if self.onLoad is not None:
-            self.onLoad(saved_state)
+        Activity._saved_state = saved_state
+        if self.on_load is not None:
+            self.on_load(saved_state)
         self.stop()
     
-    def new_clicked(self, button):
+    def new_clicked(self, checked: bool = False) -> None:
         self.stop()
