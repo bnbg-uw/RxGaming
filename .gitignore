@@ -4,6 +4,7 @@
 target/
 build/
 resources/fia/
+resources/fia/proj.db
 
 # Prerequisites
 *.d
