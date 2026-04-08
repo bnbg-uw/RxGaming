@@ -3,6 +3,7 @@
 *~$*
 target/
 build/
+resources/fia/
 
 # Prerequisites
 *.d
