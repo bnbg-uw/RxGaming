@@ -46,16 +46,15 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .value("cuttingFailure", rxtools::treatmentResult::cuttingFailure);
 
     py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
-        .def(py::init<std::string, std::string, std::string, std::string, std::string,
+        .def(py::init<std::string, std::string, std::string, std::string,
              std::string, std::string, std::string, std::string, int>(),
              py::arg("name"), py::arg("unitPolyPath"), py::arg("refDataPath"), py::arg("mcsPropPath"), py::arg("fiaPath"),
-             py::arg("projDbPath"), py::arg("lidarPath"), py::arg("unitName"), py::arg("savePath"),py::arg("nThread"))
+             py::arg("lidarPath"), py::arg("unitName"), py::arg("savePath"),py::arg("nThread"))
         .def_readonly("name", &rxgaming::ProjectSettings::name)
         .def_readonly("unitPolyPath", &rxgaming::ProjectSettings::unitPolyPath)
         .def_readonly("refDataPath", &rxgaming::ProjectSettings::refDataPath)
         .def_readonly("mcsPropPath", &rxgaming::ProjectSettings::mcsPropPath)
         .def_readonly("fiaPath", &rxgaming::ProjectSettings::fiaPath)
-        .def_readonly("projDbPath", &rxgaming::ProjectSettings::projDbPath)
         .def_readonly("lidarPath", &rxgaming::ProjectSettings::lidarPath)
         .def_readonly("unitName", &rxgaming::ProjectSettings::unitName)
         .def_readonly("nThread", &rxgaming::ProjectSettings::nThread);
@@ -89,7 +88,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def(py::init<>())
         .def("do_treatment", &rxgaming::TreatmentEngine::do_treatment);
     
-    py::class_<rxgaming::RxGamingProjectArea>(m, "RxGamingProjectArea")
+    py::class_<rxgaming::RxGamingProjectArea>(m, "ProjectArea")
         .def(py::init<const rxgaming::ProjectSettings&>())
         .def_readwrite("rxUnits", &rxgaming::RxGamingProjectArea::rxUnits);
 }

@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import pickle
-from queue import Empty, Queue
 import sys
 import traceback
+from typing import Callable, Any
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -42,9 +42,13 @@ from widgets import QFileSelectionLineEdit
 class ProjectSettingsActivity(Activity):
     """Collect project inputs and build a ``ProjectSettings`` instance."""
 
-    def on_start(self, saved_state: SavedState, prop_table_path: str) -> None:
+    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
         self.save_file_location = ""
-        self.prop_table_path = prop_table_path
+        self.prop_table_path: str = kwargs["prop_table_path"]
+        self.fia_path: str = kwargs["fia_path"]
+
+        assert isinstance(self.prop_table_path, str)
+        assert isinstance(self.fia_path, str)
 
         self.prj_name_edit = QLineEdit()
         self.unit_poly_path_edit = QFileSelectionLineEdit(filter="ESRI Shapefile (*.shp)")
@@ -56,8 +60,6 @@ class ProjectSettingsActivity(Activity):
         self.auto_save_checkbox = QCheckBox()
         self.auto_save_line_edit = QFileSelectionLineEdit(filter="*.dat", new_file=True)
         self.auto_save_line_edit.setEnabled(False)
-        self.fia_path = ""
-        self.proj_db_path = ""
 
         form_layout = QFormLayout()
         form_layout.addRow("Project name", self.prj_name_edit)
@@ -153,47 +155,29 @@ class ProjectSettingsActivity(Activity):
             self.notify_exception("The reference dataset expected file type is csv. Enter a valid csv before continuing.")
             return
 
-        output_queue: Queue[str] = Queue()
-        sys.stdout = WriteStream(output_queue)
+        self.start_button.setEnabled(False)
+        sys.stdout = WriteStream(self._append_output)
         print("Processing started:")
 
-        self.stream_thread = QThread()
-        self.output_receiver = Receiver(output_queue)
-        self.output_receiver.text_stream.connect(self.text_output.append)
-        self.output_receiver.moveToThread(self.stream_thread)
-        self.stream_thread.started.connect(self.output_receiver.run)
-        self.stream_thread.start()
-
-        self.worker_thread = QThread()
-        self.worker = Worker(
-            project_name=self.prj_name_edit.text(),
-            unit_poly_path=str(unit_poly_path),
-            reference_data_path=str(reference_data_path) if reference_data_path is not None else "",
-            lidar_data_path=str(lidar_data_path),
-            unit_name=self.unit_name_edit.text(),
-            threads=self.threads_edit.value(),
-            prop_table_path=self.prop_table_path,
-            fia_path=self.fia_path,
-            proj_db_path=self.proj_db_path,
-            save_path=self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else "",
-        )
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
-        self.worker.finished.connect(self._cleanup_stream_thread)
-        self.worker.finished.connect(self.start_gaming_activity)
-        self.worker.finished.connect(self._restore_stdout)
-
-        self.start_button.setEnabled(False)
-        self.worker.finished.connect(lambda _result: self.start_button.setEnabled(True))
-        self.worker_thread.start()
-
-    def start_gaming_activity(self, project_settings: ProjectSettings | str) -> None:
-        if not isinstance(project_settings, ProjectSettings):
-            self.notify_exception(project_settings)
+        try:
+            project_settings = ProjectSettings(
+                self.prj_name_edit.text(),
+                str(unit_poly_path),
+                str(reference_data_path) if reference_data_path is not None else "",
+                self.prop_table_path,
+                self.fia_path,
+                str(lidar_data_path),
+                self.unit_name_edit.text(),
+                self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else "",
+                self.threads_edit.value(),
+            )
+        except Exception as exc:
+            message = f"{exc}\n\nDebugging Traceback:\n{traceback.format_exc()}"
+            self.notify_exception(message)
             return
+        finally:
+            self._restore_stdout()
+            self.start_button.setEnabled(True)
 
         try:
             autosave_path = self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else None
@@ -222,18 +206,20 @@ class ProjectSettingsActivity(Activity):
         self.save_as_clicked()
 
     def save_as_clicked(self, checked: bool = False) -> None:
-        SaveStateActivity.prompt_and_save(SaveStateActivity, self.save())
+        raise NotImplementedError("Save as functionality is not yet implemented.")
         self.notify_save_success()
 
-    def _cleanup_stream_thread(self, _result: ProjectSettings | str) -> None:
-        if self.stream_thread.isRunning():
-            self.output_receiver.stop()
-            self.stream_thread.quit()
-            self.output_receiver.deleteLater()
-            self.stream_thread.deleteLater()
+    def _append_output(self, text: str) -> None:
+        if not text:
+            return
+        if sys.__stdout__ is not None:
+            sys.__stdout__.write(text)
+        self.text_output.insertPlainText(text)
+        self.text_output.ensureCursorVisible()
+        QApplication.processEvents()
 
     @staticmethod
-    def _restore_stdout(_result: ProjectSettings | str) -> None:
+    def _restore_stdout() -> None:
         sys.stdout = sys.__stdout__
         print("stdout restored")
 
@@ -264,87 +250,12 @@ class ProjectSettingsActivity(Activity):
 
 
 class WriteStream:
-    def __init__(self, queue: Queue[str]) -> None:
-        self.queue = queue
+    def __init__(self, write_callback: Callable[[str], None]) -> None:
+        self.write_callback = write_callback
 
     def write(self, text: str) -> None:
-        self.queue.put(text)
+        self.write_callback(text)
 
     def flush(self) -> None:
         pass
-
-
-class Receiver(QObject):
-    text_stream = Signal(str)
-
-    def __init__(self, queue: Queue[str]) -> None:
-        super().__init__()
-        self.queue = queue
-        self.running = False
-
-    def stop(self) -> None:
-        self.running = False
-
-    @Slot()
-    def run(self) -> None:
-        self.running = True
-        while self.running:
-            try:
-                text = self.queue.get_nowait()
-            except Empty:
-                QThread.msleep(50)
-                continue
-
-            if text:
-                sys.__stdout__.write(text)
-                self.text_stream.emit(text)
-
-
-class Worker(QObject):
-    finished = Signal(object)
-
-    def __init__(
-        self,
-        project_name: str,
-        unit_poly_path: str,
-        reference_data_path: str,
-        lidar_data_path: str,
-        unit_name: str,
-        threads: int,
-        prop_table_path: str,
-        fia_path: str,
-        proj_db_path: str,
-        save_path: str,
-    ) -> None:
-        super().__init__()
-        self.project_name = project_name
-        self.unit_poly_path = unit_poly_path
-        self.reference_data_path = reference_data_path
-        self.lidar_data_path = lidar_data_path
-        self.unit_name = unit_name
-        self.threads = threads
-        self.prop_table_path = prop_table_path
-        self.fia_path = fia_path
-        self.proj_db_path = proj_db_path
-        self.save_path = save_path
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            project_settings = ProjectSettings(
-                self.project_name,
-                self.unit_poly_path,
-                self.reference_data_path,
-                self.prop_table_path,
-                self.fia_path,
-                self.proj_db_path,
-                self.lidar_data_path,
-                self.unit_name,
-                self.save_path,
-                self.threads,
-            )
-            self.finished.emit(project_settings)
-        except Exception as exc:
-            message = f"{exc}\n\nDebugging Traceback:\n{traceback.format_exc()}"
-            self.finished.emit(message)
 

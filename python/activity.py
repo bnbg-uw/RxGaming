@@ -33,9 +33,14 @@ SavedState = dict[str, Any]
 def _get_qapplication() -> QApplication:
     instance = QApplication.instance()
     if instance is None:
-        return QApplication([])
-    assert isinstance(instance, QApplication)
-    return instance
+        app = QApplication([])
+    else:
+        assert isinstance(instance, QApplication)
+        app = instance
+    # The activity framework controls shutdown explicitly, so root-window
+    # transitions should not make Qt quit underneath us.
+    app.setQuitOnLastWindowClosed(False)
+    return app
 
 
 class WindowMode(Enum):
@@ -71,6 +76,7 @@ class Activity(ABC):
     _saved_state: ClassVar[SavedState] = {}  # Key/value pairs for all info that should be persistent across instances
     _starting: ClassVar[bool] = False
     _stopping: ClassVar[bool] = False  # Flag, True when application is shutting down
+    _event_loop_running: ClassVar[bool] = False
     version = "1.0.11"
     
     try_to_save = False
@@ -205,11 +211,15 @@ class Activity(ABC):
         elif activity._window_mode is WindowMode.ExclusiveParent:
             Activity.start_activity(type(activity._parent), activity._parent._parent, Activity._saved_state)
         
-        # If all activities are closed, then we save and quit
-        if len(Activity._activities) == 0 and Activity.try_to_save:
-            Activity._stopping = True
-            Activity._saved_state.update({"LastActivity": type(activity)})
-            Activity.start_activity(SaveStateActivity, None, Activity._saved_state)
+        # If all activities are closed, either save and quit or just stop the
+        # current event loop so the caller can decide what to do next.
+        if len(Activity._activities) == 0:
+            if Activity.try_to_save:
+                Activity._stopping = True
+                Activity._saved_state.update({"LastActivity": type(activity)})
+                Activity.start_activity(SaveStateActivity, None, Activity._saved_state)
+            else:
+                Activity._app.quit()
     
     # Factory method for starting a new activity
     # Call this instead of creating Activity instances directly through constructor
@@ -255,10 +265,14 @@ class Activity(ABC):
         finally:
             Activity._starting = False
 
-        if Activity._app.applicationState() == Qt.ApplicationState.ApplicationInactive:
+        if not Activity._event_loop_running:
             if hasattr(Activity, "test"):
                 return current_activity
-            Activity._app.exec()
+            Activity._event_loop_running = True
+            try:
+                Activity._app.exec()
+            finally:
+                Activity._event_loop_running = False
 
         return current_activity
 

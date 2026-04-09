@@ -15,49 +15,19 @@ This file is the UI for the "gaming" side of the tool, after project settings pr
 from __future__ import annotations
 
 # General
-import numpy as np
-import os
 from pathlib import Path
 from typing import Any
 
 # QT
-from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QTabWidget, QWidget, QLabel, QListView,
-                               QDataWidgetMapper, QLineEdit, QComboBox, QFileDialog, QSizePolicy, QApplication,
-                               QMessageBox)
-from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex
+from PySide6.QtWidgets import (QVBoxLayout, QWidget, QMessageBox)
 from PySide6.QtGui import QAction
-from PySide6 import QtPrintSupport, QtGui
 
 # RxGaming
 from activity import Activity, SaveStateActivity
 from gaming_export import export_current_view, export_features, export_raster, export_treelist
 from gaming_tabs import GamingTabs
-from rxgaming_core import ProjectSettings, RxGamingProjectArea
-from widgets import SliderWithValue, QMainWindowRx  # custom widgets
-
-# IO
-from shapely.geometry import mapping, Point, Polygon as ShpPolygon  # for displaying on ref plots & for writing .shp
-import raster  # our custom raster wrapper-not full featured but holds data in the way we expect and easy to send to c++
-import fiona  # Read/write .shp and crs
-import fiona.crs
-import rasterio
-import csv  # for writing treelists
-import PIL.Image  # To read the temp file for the geotifs
-from PIL import ImageDraw, ImageFont  # To add text to exported geotifs
-import tempfile  # For writing geotifs
-import pickle  # For saving the whole program
-
-# Graphics
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # Allows us to render plots in widgets.
-import descartes  # For polygons on ref plots
-from matplotlib.figure import Figure
-from matplotlib.patches import Patch, Polygon as MplPolygon
-import matplotlib.ticker as ticker  # custom axis ticks
-from matplotlib.colors import LinearSegmentedColormap, BoundaryNorm  # coloring the displayed raster
-from scipy.spatial import ConvexHull  # polygons on reference plots
-from scipy.stats import gaussian_kde  # report pages
-import seaborn # reference 2d KDE plots
+from rxgaming_core import ProjectSettings, ProjectArea
+from widgets import QMainWindowRx  # custom widgets
 
 
 # GamingActivity class
@@ -73,7 +43,7 @@ class GamingActivity(Activity):
 
         self.saved_state = saved_state
         self.project_settings = self._load_project_settings(saved_state)
-        self.project_area = RxGamingProjectArea(self.project_settings)
+        self.project_area = ProjectArea(self.project_settings)
         self.tab_widget = GamingTabs(self.project_settings, self.project_area, saved_state)
 
         layout = QVBoxLayout()
@@ -202,7 +172,6 @@ class GamingActivity(Activity):
             "refDataPath": project_settings.refDataPath,
             "mcsPropPath": project_settings.mcsPropPath,
             "fiaPath": project_settings.fiaPath,
-            "projDbPath": project_settings.projDbPath,
             "lidarPath": project_settings.lidarPath,
             "unitName": project_settings.unitName,
             "savePath": project_settings.savePath,
@@ -219,7 +188,7 @@ class GamingActivity(Activity):
         raise TypeError("Saved ProjectSettings must be an rxgaming_core.ProjectSettings or a serialized settings dict.")
 
 
-"""
+r"""
 Legacy gaming UI implementation retained below only as migration reference.
 Current tab logic lives in ``gaming_tabs.py`` and export helpers live in ``gaming_export.py``.
 

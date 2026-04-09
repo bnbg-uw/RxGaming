@@ -40,7 +40,6 @@ class ProjectSettings:
     refDataPath: str
     mcsPropPath: str
     fiaPath: str
-    projDbPath: str
     lidarPath: str
     unitName: str
     savePath: str
@@ -53,7 +52,6 @@ class ProjectSettings:
         refDataPath: str,
         mcsPropPath: str,
         fiaPath: str,
-        projDbPath: str,
         lidarPath: str,
         unitName: str,
         savePath: str,
@@ -89,7 +87,7 @@ class TreatmentEngine:
     def do_treatment(self, unit: RxUnit, dbhMin: float, dbhMax: float) -> None: ...
 
 
-class RxGamingProjectArea:
+class ProjectArea:
     rxUnits: list[RxUnit]
 
     def __init__(self, ps: ProjectSettings) -> None: ...

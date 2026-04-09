@@ -4,7 +4,7 @@
         {
             "label": "Build C++",
             "type": "shell",
-            "command": "cmake --build build/debug --config Debug",
+            "command": "cmake --build build/release --config Release",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -14,7 +14,7 @@
         {
             "label": "Build and Run",
             "type": "shell",
-            "command": "cmake --build build/debug --config Debug && python python/__main__.py",
+            "command": "cmake --build build/release --config Release && python python/__main__.py",
             "group": "build",
             "problemMatcher": "$msCompile"
         },

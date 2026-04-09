@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from rxgaming_core import ProjectSettings, RxGamingProjectArea, RxUnit, StructureSummary, TreatmentEngine, TreatmentResult
+from rxgaming_core import ProjectSettings, ProjectArea, RxUnit, StructureSummary, TreatmentEngine, TreatmentResult
 from widgets import SliderWithValue
 
 
@@ -105,7 +105,7 @@ class GamingTabs(QTabWidget):
     def __init__(
         self,
         project_settings: ProjectSettings,
-        project_area: RxGamingProjectArea,
+        project_area: ProjectArea,
         saved_state: dict[str, Any],
     ) -> None:
         super().__init__(None)

@@ -22,6 +22,7 @@ namespace rxgaming {
 
     inline void set_proj_db_path(const std::string& path) {
         std::cout << "Setting PROJ data directory to: " << path << "\n";
+        lapis::setProjDefaultDirectory(path);
         lapis::lapisGisInit(path);
 
         if(!lapis::isProjDirectorySet()) {

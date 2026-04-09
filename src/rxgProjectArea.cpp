@@ -12,15 +12,21 @@ rxgprojectarea.cpp
 */
 
 #include "rxgProjectArea.hpp"
+#include <iostream>
+#include <sstream>
 
 namespace rxgaming {
 
     RxGamingProjectArea::RxGamingProjectArea(const ProjectSettings& ps) {
+        std::cout << "RxGamingProjectArea: loading unit polygons from " << ps.unitPolyPath << "\n" << std::flush;
         auto unitPolygon = lapis::VectorDataset<lapis::MultiPolygon>(ps.unitPolyPath);
+        std::cout << "RxGamingProjectArea: loading lidar dataset from " << ps.lidarPath << "\n" << std::flush;
         auto lidar = processedfolder::readProcessedFolder(ps.lidarPath);
 
+        std::cout << "RxGamingProjectArea: projecting units into lidar CRS\n" << std::flush;
         unitPolygon.projectInPlace(lidar->crs());
 
+        std::cout << "RxGamingProjectArea: reading FIA data from " << ps.fiaPath << "\n" << std::flush;
         auto reader = rxtools::allometry::FIAReader(ps.fiaPath);
         auto dist = lidar->units().value().convertOneToThis(10000, lapis::linearUnitPresets::meter);
         lapis::Extent e(
@@ -35,8 +41,10 @@ namespace rxgaming {
             std::abort();
         }
 
+        std::cout << "RxGamingProjectArea: building FIA plot tree map\n" << std::flush;
         reader.makePlotTreeMap(std::vector<std::string>{ "DIA" });
         auto allTrees = reader.collapsePlotTreeMap();
+        std::cout << "RxGamingProjectArea: fitting DBH model\n" << std::flush;
         auto dbhModel = rxtools::allometry::DbhModel(allTrees.height, allTrees.get("DIA"), lapis::linearUnitPresets::internationalFoot, lapis::linearUnitPresets::internationalInch);
 
         std::pair<lapis::coord_t, lapis::coord_t> expectedRes{};
@@ -55,8 +63,19 @@ namespace rxgaming {
         }
         expectedRes.second = 0;
 
+        std::cout << "RxGamingProjectArea: loading shared mask raster\n" << std::flush;
         auto l = lapis::VectorDataset<lapis::MultiPolygon>(processedfolder::stringOrThrow(lidar->tileLayoutVector()));
         auto mask = lapis::Raster<lapis::cell_t>(processedfolder::stringOrThrow(lidar->maskRaster()));
+        std::cout << "RxGamingProjectArea: processing " << unitPolygon.nFeature() << " units across " << lidar->nTiles() << " tiles\n" << std::flush;
+
+        bool nameFieldExists = false;
+        if(std::find(
+            unitPolygon.getAllFieldNames().begin(),
+            unitPolygon.getAllFieldNames().end(),
+            ps.unitName) != unitPolygon.getAllFieldNames().end()) 
+        {
+            nameFieldExists = true;
+        }
 
         #pragma omp parallel
         {
@@ -64,8 +83,19 @@ namespace rxgaming {
 
             #pragma omp for nowait
             for(int i = 0; i < unitPolygon.nFeature(); ++i) {
+                std::cout << "RxGamingProjectArea: loop " << i << std::flush;
                 auto unit = unitPolygon.getFeature(i);
-                auto name = unit.getStringField(ps.unitName);
+                std::cout << "RxGamingProjectArea: got  feature " << i << std::flush;
+                std::string name;
+                if(nameFieldExists) {
+                    name = unit.getStringField(ps.unitName);
+                } else {
+                    std::ostringstream nameFallback;
+                    nameFallback << "unit_" << i;
+                    name = nameFallback.str();
+                }
+                
+                std::cout << "RxGamingProjectArea: unit " << i << " (" << name << ") start\n" << std::flush;
                 std::vector<lapis::Raster<double>> chm;
                 std::vector<lapis::Raster<int>> basinMap;
                 std::unordered_set<std::string> usedTiles;
@@ -128,6 +158,23 @@ namespace rxgaming {
                             }
                         } // for(int j = 0;...)
 
+                        
+                        
+                        std::cout
+                            << "RxGamingProjectArea: unit " << i
+                            << " collected " << basinMap.size() << " basin rasters, "
+                            << chm.size() << " CHM rasters, "
+                            << taos.size() << " TAOs\n"
+                            << std::flush;
+
+                        if (basinMap.empty() || chm.empty()) {
+                            std::cout
+                                << "RxGamingProjectArea: unit " << i
+                                << " skipped because no overlapping lidar rasters were collected\n"
+                                << std::flush;
+                            continue;
+                        }
+
                         auto mergeVectorInt = [](std::vector<lapis::Raster<int>>& v) {
                             std::vector<lapis::Raster<int>*> toMerge;
                             for (int i = 0; i < v.size(); i++) {
@@ -177,12 +224,23 @@ namespace rxgaming {
                         outBasin = lapis::extendRaster(outBasin, outChm, lapis::SnapType::in);
 
                         localUnits.emplace_back(name, thisMask, outChm, outBasin, taos);
+                        std::cout << "RxGamingProjectArea: unit " << i << " complete\n" << std::flush;
                     }
                     else {
+                        std::cout << "RxGamingProjectArea: unit " << i << " skipped because project mask does not overlap\n" << std::flush;
                         continue;
                     }
                 } // try:
-                catch (processedfolder::FileNotFoundException e) {
+                catch (const processedfolder::FileNotFoundException& e) {
+                    std::cout << "RxGamingProjectArea: unit " << i << " skipped due to missing file: " << e.what() << "\n" << std::flush;
+                    continue;
+                }
+                catch (const std::exception& e) {
+                    std::cout << "RxGamingProjectArea: unit " << i << " failed with std::exception: " << e.what() << "\n" << std::flush;
+                    throw;
+                }
+                catch (...) {
+                    std::cout << "RxGamingProjectArea: unit " << i << " failed with unknown exception\n" << std::flush;
                     continue;
                 }
             } // for(lapis::ConstFeature<lapis::MultiPolygon> unit : unitPolygon)
@@ -192,5 +250,6 @@ namespace rxgaming {
                 rxUnits.insert(rxUnits.end(), localUnits.begin(), localUnits.end());
             }
         } // #pragma omp parallel
+        std::cout << "RxGamingProjectArea: finished with " << rxUnits.size() << " units\n" << std::flush;
     }
 }

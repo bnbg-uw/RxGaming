@@ -7,7 +7,11 @@
             "request": "launch",
             "program": "${workspaceFolder}/python/__main__.py",
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": false,
+            "preLaunchTask": "Build C++",
+            "env": {
+                "PYTHONDONTWRITEBYTECODE": "1"
+            }
         },
         {
             "name": "Debug Python only",
@@ -15,7 +19,11 @@
             "request": "launch",
             "program": "${workspaceFolder}/python/__main__.py",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "preLaunchTask": "Build C++",
+            "env": {
+                "PYTHONDONTWRITEBYTECODE": "1"
+            }
         },
         {
             "name": "Debug C++ (attach)",
