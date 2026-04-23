@@ -4,10 +4,21 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
-from PySide6.QtWidgets import QGridLayout, QGroupBox, QLabel, QLineEdit, QListView, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QGridLayout,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QListView,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from rxgaming_core import RxUnit, StructureSummary
-from .units import format_value, label_for, from_display, UnitSystem
+from widgets import SliderWithValue
+from .units import UnitSystem, dbh_to_display, display_name_for, format_value, from_display, label_for
 
 
 class UnitListModel(QAbstractListModel):
@@ -53,6 +64,8 @@ class StructureInfo(QWidget):
         self.current_header = QLabel("Current")
         self.target_header = QLabel("Target")
         self.treated_header = QLabel("Treated")
+        for header in (self.current_header, self.target_header, self.treated_header):
+            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.current_tph = QLabel("-")
         self.current_ba = QLabel("-")
@@ -64,8 +77,6 @@ class StructureInfo(QWidget):
         self.target_mcs = QLineEdit()
         self.target_cc = QLineEdit()
         self.target_edits = [self.target_tph, self.target_ba, self.target_mcs, self.target_cc]
-        for edit in self.target_edits:
-            edit.setMinimumWidth(84)
 
         self.treated_tph = QLabel("-")
         self.treated_ba = QLabel("-")
@@ -82,6 +93,9 @@ class StructureInfo(QWidget):
         layout.addWidget(self.current_header, 1, 1)
         layout.addWidget(self.target_header, 1, 2)
         layout.addWidget(self.treated_header, 1, 3)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 1)
+        layout.setColumnStretch(3, 1)
 
         tph_label = label_for("tph", unit_system)
         metrics = [
@@ -218,6 +232,33 @@ class StructureInfo(QWidget):
             label.setStyleSheet(value_style)
 
 
+class StandControls(QWidget):
+    def __init__(self, unit_system: UnitSystem) -> None:
+        super().__init__()
+
+        self.dbh_cutoff = SliderWithValue(Qt.Orientation.Horizontal)
+        self.dbh_cutoff.setMinimum(0)
+        self.dbh_cutoff.setMaximum(120)
+        self.dbh_cutoff.setValue(int(round(dbh_to_display(76.2, unit_system))))
+
+        self.raster_mode = QComboBox()
+        self.raster_mode.addItems(["Canopy Model", "Basins", "Clumps"])
+
+        self.show_treatment_button = QPushButton("Show Treatment")
+        self.show_treatment_button.setCheckable(True)
+        self.show_treatment_button.setStyleSheet(
+            "QPushButton:checked { background-color: rgb(80, 80, 80); color: white; border: none; }"
+        )
+
+        layout = QGridLayout()
+        layout.addWidget(QLabel(display_name_for("dbh", unit_system)), 0, 0)
+        layout.addWidget(self.dbh_cutoff, 0, 1, 1, 3)
+        layout.addWidget(QLabel("View Mode:"), 1, 0)
+        layout.addWidget(self.raster_mode, 1, 1, 1, 3)
+        layout.addWidget(self.show_treatment_button, 2, 1, 1, 2)
+        self.setLayout(layout)
+
+
 class UnitSidebar(QWidget):
     def __init__(self, rx_units: list[RxUnit], unit_system: UnitSystem) -> None:
         super().__init__()
@@ -225,6 +266,7 @@ class UnitSidebar(QWidget):
         self.unit_list_view = QListView()
         self.unit_list_view.setModel(self.model)
         self.structure_info = StructureInfo(unit_system)
+        self.stand_controls = StandControls(unit_system)
 
         units_group = QGroupBox("UNITS")
         units_layout = QVBoxLayout()
@@ -236,8 +278,14 @@ class UnitSidebar(QWidget):
         structure_layout.addWidget(self.structure_info)
         structure_group.setLayout(structure_layout)
 
+        controls_group = QGroupBox("Stand Controls")
+        controls_layout = QVBoxLayout()
+        controls_layout.addWidget(self.stand_controls)
+        controls_group.setLayout(controls_layout)
+
         layout = QVBoxLayout()
         layout.addWidget(units_group)
+        layout.addWidget(controls_group)
         layout.addWidget(structure_group)
         layout.addStretch(1)
         self.setMaximumWidth(290)

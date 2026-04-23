@@ -68,9 +68,6 @@ class GamingTabs(QTabWidget):
     def dbh_max(self) -> float:
         return self.stand_tab.dbh_max()
 
-    def preview_dbh(self) -> float:
-        return self.stand_tab.preview_dbh()
-
     def current_page(self) -> int:
         return self.stand_tab.current_page()
 

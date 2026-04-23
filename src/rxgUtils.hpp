@@ -44,19 +44,4 @@ namespace rxgaming {
     inline void set_seed(uint32_t seed) {
         globalRng().seed(seed);
     }
-
-    inline py::array_t<double> get_ba_dist(const rxtools::TaoList& taos) {
-        py::array_t<double> arr({(py::ssize_t)taos.size()});
-        auto buf = arr.mutable_unchecked<1>();
-        for (size_t i = 0; i < taos.size(); ++i) {
-            double dbh = taos.dbh(i) / 2.54;
-            if (dbh > 0) {
-                buf(i) = 0.005454 * dbh * dbh;
-            }
-            else {
-                buf(i) = 1e-6; //just a very small number to avoid divide by zero errors.
-            }
-        }
-        return arr;
-    }
 }

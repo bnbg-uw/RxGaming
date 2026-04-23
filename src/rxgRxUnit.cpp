@@ -23,6 +23,7 @@ namespace rxgaming {
             hillshade = computeHillshade(chm);
             targetStructure = currentStructure;
             treatedStructure = currentStructure;
+            treatedTaos = this->taos;
         };
 
     py::array_t<lapis::cell_t> RxGamingRxUnit::get_mask() const {
@@ -74,6 +75,11 @@ namespace rxgaming {
 
     py::array_t<double> RxGamingRxUnit::get_taos() const {
         return taolist_to_numpy(taos);
+    }
+
+    py::array_t<uint64_t> RxGamingRxUnit::get_clump_sizes() const {
+        auto clumps = getRawClumps(taos);
+        return py::array_t<uint64_t>(clumps.size(), clumps.data());
     }
 
     py::array_t<double> RxGamingRxUnit::get_treat_chm() const {
@@ -150,6 +156,11 @@ namespace rxgaming {
 
     py::array_t<double> RxGamingRxUnit::get_treat_taos() const {
         return taolist_to_numpy(treatedTaos);
+    }
+
+    py::array_t<uint64_t> RxGamingRxUnit::get_treat_clump_sizes() const {
+        auto clumps = getRawClumps(treatedTaos);
+        return py::array_t<uint64_t>(clumps.size(), clumps.data());
     }
 
     py::array_t<double> RxGamingRxUnit::get_cut_taos() const {

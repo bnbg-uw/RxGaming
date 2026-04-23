@@ -23,7 +23,6 @@ namespace py = pybind11;
 PYBIND11_MODULE(rxgaming_core, m) {
     m.def("set_proj_db_path", &rxgaming::set_proj_db_path, "Set the PROJ data directory path");
     m.def("set_seed", &rxgaming::set_seed, "Set the random seed");
-    m.def("get_ba_dist", &rxgaming::get_ba_dist, "Get the basal area distribution");
     
     py::class_<rxtools::StructureSummary>(m, "StructureSummary")
         .def_readwrite("ba", &rxtools::StructureSummary::ba)
@@ -73,12 +72,14 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def("get_hillshade", &rxgaming::RxGamingRxUnit::get_hillshade)
         .def("get_clump_map", &rxgaming::RxGamingRxUnit::get_clump_map)
         .def("get_taos", &rxgaming::RxGamingRxUnit::get_taos)
+        .def("get_clump_sizes", &rxgaming::RxGamingRxUnit::get_clump_sizes)
 
         .def("get_treat_chm", &rxgaming::RxGamingRxUnit::get_treat_chm)
         .def("get_treat_basin", &rxgaming::RxGamingRxUnit::get_treat_basin)
         .def("get_treat_hillshade", &rxgaming::RxGamingRxUnit::get_treat_hillshade)
         .def("get_treat_clump_map", &rxgaming::RxGamingRxUnit::get_treat_clump_map)
         .def("get_treat_taos", &rxgaming::RxGamingRxUnit::get_treat_taos)
+        .def("get_treat_clump_sizes", &rxgaming::RxGamingRxUnit::get_treat_clump_sizes)
         
         .def("get_cut_taos", &rxgaming::RxGamingRxUnit::get_cut_taos)
 

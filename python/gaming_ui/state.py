@@ -13,20 +13,22 @@ class StandViewState:
     raster_mode: int = 0
     show_treatment: bool = False
     dbh_cutoff: float = 76.2
-    preview_dbh: float = 76.2
     unit_system: UnitSystem = UnitSystem.IMPERIAL
 
     @classmethod
     def from_saved_state(cls, saved_state: dict[str, object]) -> "StandViewState":
-        cutoff = saved_state.get("GamingActivity.cut_range", saved_state.get("GamingActivity.dbh_max", 30.0))
+        defaults = cls()
+        cutoff = saved_state.get(
+            "GamingActivity.cut_range",
+            saved_state.get("GamingActivity.dbh_max", defaults.dbh_cutoff),
+        )
         return cls(
             selected_unit_index=int(saved_state.get("GamingActivity.selected_unit", 0)),
             active_page=int(saved_state.get("GamingActivity.page", 0)),
             raster_mode=int(saved_state.get("GamingActivity.raster_mode", 0)),
             show_treatment=bool(saved_state.get("GamingActivity.show_treatment", False)),
             dbh_cutoff=float(cutoff),
-            preview_dbh=float(saved_state.get("GamingActivity.preview_dbh", 30.0)),
-            unit_system=UnitSystem(saved_state.get("GamingActivity.unit_system", UnitSystem.IMPERIAL.value)),
+            unit_system=UnitSystem(saved_state.get("GamingActivity.unit_system", defaults.unit_system.value)),
         )
 
     @property

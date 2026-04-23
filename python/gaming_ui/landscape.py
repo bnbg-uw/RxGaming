@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from rxgaming_core import ProjectSettings, RxUnit, TreatmentResult
+from rxgaming_core import ProjectSettings, RxUnit
 from .state import StandViewState
 from .units import array_to_display, display_name_for
 
@@ -97,7 +97,7 @@ class LandscapeReferenceTab(QWidget):
                 "gs",
                 label="Target",
             )
-            if selected.result == TreatmentResult.success and selected.treatedStructure is not None:
+            if selected.treatedStructure is not None:
                 treated = selected.treatedStructure
                 axis.plot(
                     [self.array_to_display(np.asarray([treated.tph], dtype=float), "tph")[0]],

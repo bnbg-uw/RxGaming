@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
+from scipy.stats import gaussian_kde
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from rxgaming_core import RxUnit, StructureSummary, TreatmentEngine, TreatmentResult
 from .sidebar import UnitSidebar
 from .state import StandViewState
-from .units import array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_value
+from .units import FEET_PER_METER, array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_value, label_for
 from .views import CutReportTab, StandPages, TreatmentReportTab, VisualizeTab
 
 
@@ -22,6 +24,7 @@ class StandViewCoordinator(QWidget):
         self.unit_system = state.unit_system
         self._state_changed_callback: Callable[[], None] | None = None
         self.treatment_engine = TreatmentEngine()
+        self._mcs_prop_table = self._load_mcs_prop_table()
 
         self.sidebar = UnitSidebar(rx_units, self.unit_system)
         self.visualize_tab = VisualizeTab(self.unit_system)
@@ -76,9 +79,6 @@ class StandViewCoordinator(QWidget):
     def dbh_max(self) -> float:
         return self.state.dbh_max
 
-    def preview_dbh(self) -> float:
-        return self.state.preview_dbh
-
     def current_page(self) -> int:
         return self.state.active_page
 
@@ -115,19 +115,15 @@ class StandViewCoordinator(QWidget):
         selection_model.currentChanged.connect(self._on_unit_changed)
 
         self.sidebar.structure_info.set_targets_changed_callback(self._on_targets_changed)
-        self.visualize_tab.raster_mode.currentIndexChanged.connect(self._on_raster_mode_changed)
-        self.visualize_tab.dbh_cutoff.valueChanged.connect(self._on_cutoff_changed)
-        self.visualize_tab.show_treatment_button.toggled.connect(self._on_show_treatment_toggled)
-        self.treatment_report_tab.preview_slider.valueChanged.connect(self._on_preview_changed)
+        self.sidebar.stand_controls.raster_mode.currentIndexChanged.connect(self._on_raster_mode_changed)
+        self.sidebar.stand_controls.dbh_cutoff.valueChanged.connect(self._on_cutoff_changed)
+        self.sidebar.stand_controls.show_treatment_button.toggled.connect(self._on_show_treatment_toggled)
         self.pages.currentChanged.connect(self._on_page_changed)
 
     def _restore_state(self) -> None:
-        self.visualize_tab.raster_mode.setCurrentIndex(self.state.raster_mode)
-        self.visualize_tab.dbh_cutoff.setValue(int(round(dbh_to_display(self.state.dbh_cutoff, self.unit_system))))
-        self.visualize_tab.show_treatment_button.setChecked(self.state.show_treatment)
-        self.treatment_report_tab.preview_slider.setValue(
-            int(round(dbh_to_display(self.state.preview_dbh, self.unit_system)))
-        )
+        self.sidebar.stand_controls.raster_mode.setCurrentIndex(self.state.raster_mode)
+        self.sidebar.stand_controls.dbh_cutoff.setValue(int(round(dbh_to_display(self.state.dbh_cutoff, self.unit_system))))
+        self.sidebar.stand_controls.show_treatment_button.setChecked(self.state.show_treatment)
         self.pages.setCurrentIndex(self.state.active_page)
 
         if self.rx_units:
@@ -162,11 +158,6 @@ class StandViewCoordinator(QWidget):
             self.sidebar.model.refresh()
         self.state.show_treatment = checked
         self.refresh_all()
-        self._notify_state_changed()
-
-    def _on_preview_changed(self, value: int) -> None:
-        self.state.preview_dbh = dbh_from_display(float(value), self.unit_system)
-        self.update_treatment_report()
         self._notify_state_changed()
 
     def _on_page_changed(self, index: int) -> None:
@@ -246,7 +237,7 @@ class StandViewCoordinator(QWidget):
                     colorbar = figure.colorbar(img, orientation="vertical", label="Hillshade")
 
             suffix = " (Treated)" if self.state.show_treatment else ""
-            axes.set_title(f"{unit.name} {self.visualize_tab.raster_mode.currentText()}{suffix}")
+            axes.set_title(f"{unit.name} {self.sidebar.stand_controls.raster_mode.currentText()}{suffix}")
             if colorbar is not None:
                 colorbar.ax.tick_params(labelsize=8)
 
@@ -263,8 +254,10 @@ class StandViewCoordinator(QWidget):
         report.displayed_mcs_axes.clear()
 
         if not self.rx_units:
-            report.report_status.setText("No units available.")
-            report.target_summary.setText("-")
+            report.current_label.setText("Current\n-")
+            report.displayed_label.setText("Post-Treatment\n-")
+            report.target_label.setText("Target\n-")
+            report.displayed_mcs_prop.setText("")
             for canvas in (
                 report.current_ba_canvas,
                 report.current_mcs_canvas,
@@ -275,65 +268,59 @@ class StandViewCoordinator(QWidget):
             return
 
         unit = self.current_unit()
-        #simulated = unit.get_simulated_structures(self.state.preview_dbh)
-        preview = None
-        
-        report.report_status.setText(
-            f"{display_name_for('dbh', self.unit_system)}: {format_value('dbh', self.state.preview_dbh, self.unit_system, precision=0)}\n"
-            f"Unit: {unit.name}\n"
-            f"Treatment Result: {unit.result.name}"
+
+        report.current_label.setText(
+            "Current\n"
+            f"{self._format_structure_summary(unit.currentStructure, self.unit_system)}"
         )
-        report.target_summary.setText(
-            self._format_target_summary(
-                unit.currentStructure,
-                unit.targetStructure,
-                unit.treatedStructure,
-                preview,
-                self.unit_system,
-            )
+        report.displayed_label.setText(
+            "Post-Treatment\n"
+            f"{self._format_structure_summary(unit.treatedStructure, self.unit_system)}"
+        )
+        report.target_label.setText(
+            "Target\n"
+            f"{self._format_structure_summary(unit.targetStructure, self.unit_system)}"
         )
 
-        self._draw_comparison_bar(
+        self._configure_density_axes(
             report.current_ba_axes,
-            f"Current vs Target {display_name_for('ba', self.unit_system)}",
-            [
-                array_to_display("ba", np.asarray([unit.currentStructure.ba], dtype=float), self.unit_system)[0],
-                array_to_display("ba", np.asarray([unit.targetStructure.ba], dtype=float), self.unit_system)[0],
-            ],
-            ["Current", "Target"],
-            ylabel=display_name_for("ba", self.unit_system),
+            f"Basal Area ({self._density_ba_unit_label()})",
+            "Kernel Density",
+            "Pre-Treatment Tree Basal Area Distribution",
         )
-        self._draw_comparison_bar(
-            report.current_mcs_axes,
-            "Current vs Target MCS",
-            [unit.currentStructure.mcs, unit.targetStructure.mcs],
-            ["Current", "Target"],
-        )
-        self._draw_comparison_bar(
+        self._configure_density_axes(
             report.displayed_ba_axes,
-            f"Preview vs Treated {display_name_for('ba', self.unit_system)}",
-            [
-                array_to_display(
-                    "ba",
-                    np.asarray([preview.ba if preview is not None else unit.currentStructure.ba], dtype=float),
-                    self.unit_system,
-                )[0],
-                array_to_display("ba", np.asarray([unit.treatedStructure.ba], dtype=float), self.unit_system)[0],
-            ],
-            ["Preview", "Treated"],
-            ylabel=display_name_for("ba", self.unit_system),
+            f"Basal Area ({self._density_ba_unit_label()})",
+            "Kernel Density",
+            "Post-Treatment Tree Basal Area Distribution",
         )
-        self._draw_comparison_bar(
+        self._configure_density_axes(
+            report.current_mcs_axes,
+            "Clump Size (n trees)",
+            "Kernel Density",
+            "Pre-Treatment Clump Size Distribution",
+        )
+        self._configure_density_axes(
             report.displayed_mcs_axes,
-            "Preview vs Treated MCS",
-            [preview.mcs if preview is not None else unit.currentStructure.mcs, unit.treatedStructure.mcs],
-            ["Preview", "Treated"],
+            "Clump Size (n trees)",
+            "Kernel Density",
+            "Post-Treatment Clump Size Distribution",
         )
 
-        report.current_ba_figure.tight_layout()
-        report.current_mcs_figure.tight_layout()
-        report.displayed_ba_figure.tight_layout()
-        report.displayed_mcs_figure.tight_layout()
+        current_ba = self._tree_ba_distribution(unit.get_taos())
+        current_csd = self._safe_array(unit.get_clump_sizes())
+        self._draw_density(report.current_ba_axes, current_ba)
+        self._draw_density(report.current_mcs_axes, current_csd)
+        report.displayed_mcs_prop.setText("")
+
+        treated_ba = self._tree_ba_distribution(unit.get_treat_taos())
+        treated_csd = self._safe_array(unit.get_treat_clump_sizes())
+        self._draw_density(report.displayed_ba_axes, treated_ba)
+        self._draw_density(report.displayed_mcs_axes, treated_csd)
+        self._sync_axis_limits(report.current_ba_axes, report.displayed_ba_axes)
+        self._sync_axis_limits(report.current_mcs_axes, report.displayed_mcs_axes)
+        report.displayed_mcs_prop.setText(self._mcs_prop_text(unit.treatedStructure))
+
         report.current_ba_canvas.draw_idle()
         report.current_mcs_canvas.draw_idle()
         report.displayed_ba_canvas.draw_idle()
@@ -350,25 +337,24 @@ class StandViewCoordinator(QWidget):
 
         unit = self.current_unit()
         cut_points = unit.get_cut_taos()
-        if cut_points.ndim != 2 or cut_points.shape[0] == 0:
-            report.cut_summary.setText(f"Cut Trees:\n{unit.name}\nNo cut trees are available yet.")
-            report.cut_axes.text(0.5, 0.5, "No cut-tree data yet", ha="center", va="center")
-            report.cut_axes.set_xticks([])
-            report.cut_axes.set_yticks([])
-        else:
-            heights = cut_points[:, 2] if cut_points.shape[1] > 2 else cut_points[:, -1]
-            display_heights = array_to_display("height", heights.astype(float), self.unit_system)
-            report.cut_summary.setText(
-                f"Cut Trees:\n{unit.name}\nCount: {cut_points.shape[0]}\n"
-                f"Mean Height: {format_value('height', float(np.mean(heights)), self.unit_system)} "
-                f"{display_name_for('height', self.unit_system).split()[-1][1:-1]}"
-            )
-            report.cut_axes.hist(display_heights, bins=20, color="#4a6fa5", edgecolor="white")
-            report.cut_axes.set_title("Cut Tree Height Distribution")
-            report.cut_axes.set_xlabel(display_name_for("height", self.unit_system))
-            report.cut_axes.set_ylabel("Count")
+        self._configure_density_axes(
+            report.cut_axes,
+            f"Basal Area ({self._density_ba_unit_label()})",
+            "Kernel Density",
+            "Cut Trees Basal Area Distribution",
+        )
 
-        report.cut_figure.tight_layout()
+        if cut_points.ndim != 2 or cut_points.shape[0] == 0:
+            report.cut_summary.setText("Cut Trees:\nBA:")
+            report.cut_axes.text(0.5, 0.5, "No cut-tree data yet", ha="center", va="center")
+        else:
+            cut_ba = self._tree_ba_distribution(cut_points)
+            self._draw_density(report.cut_axes, cut_ba)
+            ba_per_area = self._cut_ba_per_area(cut_ba, unit.areaHa)
+            report.cut_summary.setText(
+                f"Cut Trees:\n\nBA:\t{ba_per_area:.3f} {label_for('ba', self.unit_system)}"
+            )
+
         report.cut_canvas.draw_idle()
 
     def _notify_state_changed(self) -> None:
@@ -376,46 +362,115 @@ class StandViewCoordinator(QWidget):
             self._state_changed_callback()
 
     @staticmethod
-    def _draw_comparison_bar(
+    def _configure_density_axes(
         axes: object,
+        xlabel: str,
+        ylabel: str,
         title: str,
-        values: list[float],
-        labels: list[str],
-        ylabel: str | None = None,
     ) -> None:
-        axes.bar(labels, values, color=["#6d8dad", "#c88c5a"])
+        axes.cla()
+        axes.set_xlabel(xlabel)
+        axes.set_ylabel(ylabel)
         axes.set_title(title)
-        if ylabel is not None:
-            axes.set_ylabel(ylabel)
-        axes.tick_params(axis="x", rotation=15)
 
     @staticmethod
-    def _format_target_summary(
-        current: StructureSummary,
-        target: StructureSummary,
-        treated: StructureSummary | None,
-        preview: StructureSummary | None,
-        unit_system: object,
-    ) -> str:
-        def structure_text(structure: StructureSummary | None) -> str:
-            if structure is None:
-                return "-"
-            return ", ".join(
-                [
-                    f"{display_name_for('tph', unit_system)} {format_value('tph', structure.tph, unit_system)}",
-                    f"{display_name_for('ba', unit_system)} {format_value('ba', structure.ba, unit_system)}",
-                    f"MCS {format_value('mcs', structure.mcs, unit_system)}",
-                    f"CC {format_value('cc', structure.cc, unit_system)}",
-                ]
-            )
+    def _safe_array(values: object) -> np.ndarray:
+        array = np.asarray(values, dtype=float)
+        return array[np.isfinite(array)]
 
+    def _tree_ba_distribution(self, points: object) -> np.ndarray:
+        point_array = np.asarray(points, dtype=float)
+        if point_array.ndim != 2 or point_array.shape[0] == 0 or point_array.shape[1] < 5:
+            return np.zeros(0, dtype=float)
+
+        dbh_cm = point_array[:, 4]
+        valid_dbh = dbh_cm[np.isfinite(dbh_cm) & (dbh_cm > 0.0)]
+        if valid_dbh.size == 0:
+            return np.zeros(0, dtype=float)
+
+        dbh_m = valid_dbh / 100.0
+        ba_m2 = np.pi * np.square(dbh_m / 2.0)
+        if self.unit_system.value == "imperial":
+            return ba_m2 * FEET_PER_METER * FEET_PER_METER
+        return ba_m2
+
+    def _cut_ba_per_area(self, cut_ba: np.ndarray, area_ha: float) -> float:
+        if cut_ba.size == 0 or not np.isfinite(area_ha) or area_ha <= 0.0:
+            return 0.0
+        if self.unit_system.value == "imperial":
+            area_acres = area_ha / (4046.8564224 / 10000.0)
+            if area_acres <= 0.0:
+                return 0.0
+            return float(np.sum(cut_ba) / area_acres)
+        return float(np.sum(cut_ba) / area_ha)
+
+    @staticmethod
+    def _draw_density(axes: object, values: np.ndarray) -> None:
+        if values.size == 0:
+            axes.text(0.5, 0.5, "No data available", ha="center", va="center", transform=axes.transAxes)
+            return
+        if values.size == 1 or np.allclose(values, values[0]):
+            axes.axvline(values[0], color="#4a6fa5", linewidth=2)
+            return
+
+        density = gaussian_kde(values)
+        density.covariance_factor = lambda: 0.25
+        density._compute_covariance()
+        x_values = np.linspace(0.0, float(np.max(values)), 200)
+        axes.plot(x_values, density(x_values), color="#2f5d8a", linewidth=2)
+
+    @staticmethod
+    def _sync_axis_limits(primary_axes: object, secondary_axes: object) -> None:
+        x_range = (
+            min(primary_axes.get_xlim()[0], secondary_axes.get_xlim()[0]),
+            max(primary_axes.get_xlim()[1], secondary_axes.get_xlim()[1]),
+        )
+        y_range = (
+            min(primary_axes.get_ylim()[0], secondary_axes.get_ylim()[0]),
+            max(primary_axes.get_ylim()[1], secondary_axes.get_ylim()[1]),
+        )
+        primary_axes.set_xlim(x_range)
+        primary_axes.set_ylim(y_range)
+        secondary_axes.set_xlim(x_range)
+        secondary_axes.set_ylim(y_range)
+
+    def _mcs_prop_text(self, structure: StructureSummary) -> str:
+        if self._mcs_prop_table is None:
+            return ""
+        rows = self._mcs_prop_table
+        mask = np.logical_and(rows["MCS_min"] < structure.mcs, rows["MCS_max"] >= structure.mcs)
+        if not np.any(mask):
+            return ""
+        row = rows[mask][0]
+        fields = ("1", "2to4", "5to9", "9to14", "15to30", "gt30")
+        props = "\t".join(str(row[field]) for field in fields)
+        return "Clumps:  1\t2-4\t5-9\t10-14\t15-29\t30+\nProps:    " + props
+
+    @staticmethod
+    def _load_mcs_prop_table() -> np.ndarray | None:
+        candidates = (
+            Path(__file__).resolve().parents[2] / "resources" / "mcs_prop.csv",
+            Path(__file__).resolve().parents[2] / "mcs_prop.csv",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return np.genfromtxt(candidate, delimiter=",", names=True, dtype=None, encoding="utf-8")
+        return None
+
+    def _density_ba_unit_label(self) -> str:
+        return "ft^2/ac" if self.unit_system.value == "imperial" else "m^2/ha"
+
+    @staticmethod
+    def _format_structure_summary(
+        structure: StructureSummary | None,
+        unit_system: object,
+        empty_text: str = "-",
+    ) -> str:
+        if structure is None:
+            return empty_text
         return (
-            "Current\n"
-            f"{structure_text(current)}\n\n"
-            "Target\n"
-            f"{structure_text(target)}\n\n"
-            "Preview\n"
-            f"{structure_text(preview)}\n\n"
-            "Treated\n"
-            f"{structure_text(treated)}"
+            f"{label_for('tph', unit_system)}: {format_value('tph', structure.tph, unit_system)}\n"
+            f"BA: {format_value('ba', structure.ba, unit_system)}\n"
+            f"MCS: {format_value('mcs', structure.mcs, unit_system)}\n"
+            f"CC: {format_value('cc', structure.cc, unit_system)}"
         )

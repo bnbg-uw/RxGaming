@@ -20,9 +20,9 @@ in some way and act like Qt elements, so they are here together.
 from enum import Enum, auto
 from typing import Callable
 
-from PySide6.QtCore import Qt, QPoint
-from PySide6.QtGui import QCloseEvent, QFontMetrics, QPaintEvent, QPainter, QPen
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton, QFileDialog, QSlider, QMainWindow
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton, QFileDialog, QSlider, QMainWindow, QLabel, QVBoxLayout
 
 
 WindowCloseCallback = Callable[["QWindow"], None]
@@ -130,9 +130,16 @@ class QMainWindowRx(QMainWindow):
             self.on_closed(self)
 
 
-class SliderWithValue(QSlider):
+class SliderWithValue(QWidget):
+    valueChanged = Signal(int)
+
     def __init__(self, parent: QWidget | Qt.Orientation | None = None):
-        super().__init__(parent)
+        orientation = parent if isinstance(parent, Qt.Orientation) else Qt.Orientation.Horizontal
+        widget_parent = None if isinstance(parent, Qt.Orientation) else parent
+        super().__init__(widget_parent)
+
+        self._slider = QSlider(orientation)
+        self._value_label = QLabel("0")
 
         self.style_sheet = """
         QSlider::groove:vertical {
@@ -167,30 +174,54 @@ class SliderWithValue(QSlider):
         }
         """
 
-        # self.setStyleSheet(self.style_sheet)
+        self._slider.setStyleSheet(self.style_sheet)
+        self._value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._value_label.setStyleSheet(
+            "color: #12343b;"
+            "background-color: #d8f0f2;"
+            "font-weight: 700;"
+            "padding: 4px 10px;"
+            "border: 1px solid #1e3a3f;"
+            "border-radius: 8px;"
+        )
 
-    def paintEvent(self, event: QPaintEvent) -> None:
-        super().paintEvent(event)
+        if orientation == Qt.Orientation.Horizontal:
+            layout = QHBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
+            layout.addWidget(self._slider, stretch=1)
+            layout.addWidget(self._value_label, stretch=0)
+            self.setMinimumHeight(42)
+        else:
+            layout = QVBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(8)
+            layout.addWidget(self._slider, stretch=1)
+            layout.addWidget(self._value_label, stretch=0, alignment=Qt.AlignmentFlag.AlignHCenter)
+            self.setMinimumWidth(54)
 
-        curr_value = str(self.value())
-        round_value = round(float(curr_value), 2)
+        self.setLayout(layout)
+        self._slider.valueChanged.connect(self._on_value_changed)
 
-        painter = QPainter(self)
-        painter.setPen(QPen(Qt.GlobalColor.black))
+    def _on_value_changed(self, value: int) -> None:
+        self._value_label.setText(f"{value:.0f}")
+        self.valueChanged.emit(value)
 
-        font_metrics = QFontMetrics(self.font())
-        font_width = font_metrics.boundingRect(str(round_value)).width()
-        rect = self.rect()
-        if self.orientation() == Qt.Orientation.Horizontal:
-            horizontal_x_pos = rect.width() - font_width - 5
-            horizontal_y_pos = int(rect.height() * 0.75)
+    def orientation(self) -> Qt.Orientation:
+        return self._slider.orientation()
 
-            painter.drawText(QPoint(horizontal_x_pos, horizontal_y_pos), str(round_value))
+    def setMinimum(self, value: int) -> None:
+        self._slider.setMinimum(value)
 
-        elif self.orientation() == Qt.Orientation.Vertical:
-            painter.drawText(
-                QPoint(int(rect.width() / 2.0 - font_width / 2.0), rect.height() - 5),
-                str(round_value),
-            )
+    def setMaximum(self, value: int) -> None:
+        self._slider.setMaximum(value)
 
-        painter.drawRect(rect)
+    def setRange(self, minimum: int, maximum: int) -> None:
+        self._slider.setRange(minimum, maximum)
+
+    def setValue(self, value: int) -> None:
+        self._slider.setValue(value)
+        self._value_label.setText(f"{self._slider.value():.0f}")
+
+    def value(self) -> int:
+        return self._slider.value()
