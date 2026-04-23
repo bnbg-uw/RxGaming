@@ -1,0 +1,21 @@
+[
+    {
+        "key": "ctrl+shift+f5",
+        "command": "debug.startFromConfig",
+        "args": {
+            "name": "Build C++ Then Python",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${command:python.interpreterPath}",
+            "program": "${workspaceFolder}/python/__main__.py",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build C++",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": "${workspaceFolder}/python"
+            }
+        }
+    }
+]

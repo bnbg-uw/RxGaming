@@ -22,7 +22,10 @@ namespace rxgaming {
 
         inline void do_treatment(RxGamingRxUnit& unit, double dbhMin, double dbhMax) {
             try {
-                auto trt =  treater.doTreatment(unit, dbhMin, dbhMax, 10, false, "E:/dropbox/rxgaming paper/treatmentvisual/data/");
+                std::cout << "Pre Treatment BA: " << unit.currentStructure.ba << "\n";
+                std::cout << "Target Treatment BA: " << unit.targetStructure.ba << "\n";
+                std::cout << "DBHMIN: " << dbhMin << " " << "DBHMAX:" << dbhMax << "\n";
+                auto trt =  treater.doTreatment(unit, dbhMin, dbhMax, 10, false, "");
                 unit.treatedTaos = std::get<0>(trt);
                 unit.cutTaos = std::get<1>(trt);
                 unit.result = std::get<2>(trt);
@@ -30,6 +33,7 @@ namespace rxgaming {
                     unit.treatedTaos,
                     lapis::Alignment((lapis::Extent)unit.unitMask, 1, 1),
                     unit.areaHa);
+                std::cout << "Post Treatment BA: " << unit.treatedStructure.ba << "\n"; 
             }
             catch (std::exception& e) {
                 std::cout << e.what();

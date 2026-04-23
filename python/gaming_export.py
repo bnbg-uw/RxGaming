@@ -6,14 +6,19 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
-from gaming_tabs import GamingTabs
+from gaming_ui import GamingTabs
 
 
 def export_current_view(tabs: GamingTabs, parent: QWidget) -> None:
     file_path = QFileDialog.getSaveFileName(parent, "Export current view", "", "PNG files (*.png)")[0]
     if not file_path:
         return
-    tabs.raster_figure.savefig(file_path, dpi=300)
+
+    output_path = Path(file_path)
+    if output_path.suffix.lower() != ".png":
+        output_path = output_path.with_suffix(".png")
+
+    tabs.current_export_widget().grab().save(str(output_path), "PNG")
 
 
 def export_raster(tabs: GamingTabs, parent: QWidget) -> None:

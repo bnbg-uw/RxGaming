@@ -2,27 +2,32 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run RxGaming",
+            "name": "Python Only",
             "type": "debugpy",
             "request": "launch",
+            "python": "${command:python.interpreterPath}",
             "program": "${workspaceFolder}/python/__main__.py",
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "preLaunchTask": "Build C++",
             "env": {
-                "PYTHONDONTWRITEBYTECODE": "1"
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": "${workspaceFolder}/python"
             }
         },
         {
-            "name": "Debug Python only",
+            "name": "Build C++ Then Python",
             "type": "debugpy",
             "request": "launch",
+            "python": "${command:python.interpreterPath}",
             "program": "${workspaceFolder}/python/__main__.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
             "preLaunchTask": "Build C++",
+            "console": "integratedTerminal",
+            "justMyCode": false,
             "env": {
-                "PYTHONDONTWRITEBYTECODE": "1"
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": "${workspaceFolder}/python"
             }
         },
         {

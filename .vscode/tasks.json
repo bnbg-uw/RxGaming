@@ -12,13 +12,6 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "Build and Run",
-            "type": "shell",
-            "command": "cmake --build build/release --config Release && python python/__main__.py",
-            "group": "build",
-            "problemMatcher": "$msCompile"
-        },
-        {
             "label": "Update submodules",
             "type": "shell",
             "command": "git submodule update --remote --merge && git add src/lapisgis src/lico src/processedfolder src/rxtools",

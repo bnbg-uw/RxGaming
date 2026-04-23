@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from activity import Activity, SavedState, SaveStateActivity, WindowMode
+from activity import Activity, SavedState, WindowMode
 from gamingactivity import GamingActivity
 from rxgaming_core import ProjectSettings
 from widgets import QFileSelectionLineEdit

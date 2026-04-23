@@ -77,7 +77,7 @@ namespace rxgaming {
             nameFieldExists = true;
         }
 
-        #pragma omp parallel
+        #pragma omp parallel num_threads(ps.nThread)
         {
             std::vector<RxGamingRxUnit> localUnits;
 
@@ -158,8 +158,6 @@ namespace rxgaming {
                             }
                         } // for(int j = 0;...)
 
-                        
-                        
                         std::cout
                             << "RxGamingProjectArea: unit " << i
                             << " collected " << basinMap.size() << " basin rasters, "

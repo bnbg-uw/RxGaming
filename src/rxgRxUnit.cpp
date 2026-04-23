@@ -20,7 +20,9 @@ namespace rxgaming {
             this->name = name;
             this->chm = chm;
             this->basinMap = basinMap;
-            this->hillshade = computeHillshade(chm);
+            hillshade = computeHillshade(chm);
+            targetStructure = currentStructure;
+            treatedStructure = currentStructure;
         };
 
     py::array_t<lapis::cell_t> RxGamingRxUnit::get_mask() const {
@@ -258,36 +260,36 @@ namespace rxgaming {
     }
 
     lapis::Raster<double> RxGamingRxUnit::computeHillshade(const lapis::Raster<double>& chm, double az, double elev) {
-            az = (360-az+90) * M_PI / 180.0;
-            elev = (90- elev) * M_PI / 180.0;
-            
-            lapis::Raster<double> hillshade((lapis::Alignment)chm);
-            for (lapis::rowcol_t x = 0; x < chm.ncol(); ++x) {
-                auto xl = std::max(x-1, 0);
-                auto xr = std::min(x+1, chm.ncol()-1);
-                for (lapis::rowcol_t y = 0; y < chm.nrow(); ++y) {
-                    if(!chm.atRCUnsafe(y, x).has_value()) {
-                        continue;
-
-                    auto yl = std::max(y-1, 0);
-                    auto yr = std::min(y+1, chm.nrow()-1);
-                    
-                    if(!chm.atRCUnsafe(yl, x).has_value() ||
-                     !chm.atRCUnsafe(yr, x).has_value() ||
-                     !chm.atRCUnsafe(y, xl).has_value() ||
-                     !chm.atRCUnsafe(y, xr).has_value()
-                    ) {
-                        continue;
-                    }
-
-                    auto sx = (chm.atRCUnsafe(y, xr).value() - chm.atRCUnsafe(y, xl).value()) / (2.0*chm.xres());
-                    auto sy = (chm.atRCUnsafe(yr, x).value() - chm.atRCUnsafe(yl, x).value()) / (2.0*chm.yres());
-
-                    auto asp_rad = std::atan2(sy, sx);
-                    auto s_mag_rad = std::atan(std::sqrt(sx*sx + sy*sy));
-                    hillshade.atRCUnsafe(y, x).value() = 255.0 * (std::cos(elev) * std::cos(s_mag_rad) + std::sin(elev) * std::sin(s_mag_rad) * std::cos(az - asp_rad));
-                    hillshade.atRCUnsafe(y, x).has_value() = true;
+        az = (360-az+90) * M_PI / 180.0;
+        elev = (90- elev) * M_PI / 180.0;
+        
+        lapis::Raster<double> hillshade((lapis::Alignment)chm);
+        for (lapis::rowcol_t x = 0; x < chm.ncol(); ++x) {
+            auto xl = std::max(x-1, 0);
+            auto xr = std::min(x+1, chm.ncol()-1);
+            for (lapis::rowcol_t y = 0; y < chm.nrow(); ++y) {
+                if(!chm.atRCUnsafe(y, x).has_value()) {
+                    continue;
                 }
+
+                auto yl = std::max(y-1, 0);
+                auto yr = std::min(y+1, chm.nrow()-1);
+                
+                if(!chm.atRCUnsafe(yl, x).has_value() ||
+                 !chm.atRCUnsafe(yr, x).has_value() ||
+                 !chm.atRCUnsafe(y, xl).has_value() ||
+                 !chm.atRCUnsafe(y, xr).has_value()
+                ) {
+                    continue;
+                }
+
+                auto sx = (chm.atRCUnsafe(y, xr).value() - chm.atRCUnsafe(y, xl).value()) / (2.0*chm.xres());
+                auto sy = (chm.atRCUnsafe(yr, x).value() - chm.atRCUnsafe(yl, x).value()) / (2.0*chm.yres());
+
+                auto asp_rad = std::atan2(sy, sx);
+                auto s_mag_rad = std::atan(std::sqrt(sx*sx + sy*sy));
+                hillshade.atRCUnsafe(y, x).value() = 255.0 * (std::cos(elev) * std::cos(s_mag_rad) + std::sin(elev) * std::sin(s_mag_rad) * std::cos(az - asp_rad));
+                hillshade.atRCUnsafe(y, x).has_value() = true;
             }
         }
         return hillshade;
