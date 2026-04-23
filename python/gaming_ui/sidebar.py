@@ -285,8 +285,8 @@ class UnitSidebar(QWidget):
 
         layout = QVBoxLayout()
         layout.addWidget(units_group)
-        layout.addWidget(controls_group)
         layout.addWidget(structure_group)
         layout.addStretch(1)
+        layout.addWidget(controls_group)
         self.setMaximumWidth(290)
         self.setLayout(layout)
