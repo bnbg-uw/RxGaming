@@ -35,16 +35,16 @@ namespace rxgaming {
 
         py::array_t<lapis::cell_t> get_mask() const;
         py::array_t<double> get_chm() const;
-        py::array_t<lapis::cell_t> get_basin() const;
+        py::array_t<int> get_basin() const;
         py::array_t<double> get_hillshade() const;
-        py::array_t<lapis::cell_t> get_clump_map() const;
+        py::array_t<int> get_clump_map() const;
         py::array_t<double> get_taos() const;
         py::array_t<uint64_t> get_clump_sizes() const;
 
         py::array_t<double> get_treat_chm() const;
-        py::array_t<lapis::cell_t> get_treat_basin() const;
+        py::array_t<int> get_treat_basin() const;
         py::array_t<double> get_treat_hillshade() const;
-        py::array_t<lapis::cell_t> get_treat_clump_map() const;
+        py::array_t<int> get_treat_clump_map() const;
         py::array_t<double> get_treat_taos() const;
         py::array_t<uint64_t> get_treat_clump_sizes() const;
 

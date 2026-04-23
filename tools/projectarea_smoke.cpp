@@ -116,15 +116,8 @@ int main(int argc, char** argv) {
             const auto& unit = projectArea.rxUnits[i];
             std::cout << "  [" << i << "] " << unit.name << " areaHa=" << unit.areaHa << "\n";
         }
-        auto treater = rxgaming::TreatmentEngine();
-        for(int i = 0; i < 20; ++i) {
-            projectArea.rxUnits[0].targetStructure.ba = projectArea.rxUnits[0].currentStructure.ba - (projectArea.rxUnits[0].currentStructure.ba / 20) * i;
-            auto before = std::chrono::high_resolution_clock::now();
-            treater.do_treatment(projectArea.rxUnits[0], 0, 9999);
-            auto after = std::chrono::high_resolution_clock::now();
-            auto dur = after-before;
-            std::cout << "Run " << i << " of 20:" << projectArea.rxUnits[0].treatedStructure.ba << "\n";
-        }
+        projectArea.rxUnits[0].basinMap.writeRaster("F:/basin.tif");
+        projectArea.rxUnits[0].get_clump_map();
         return 0;
     }
     catch (const std::exception& e) {

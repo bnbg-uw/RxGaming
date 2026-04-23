@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
+from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap, ListedColormap, hsv_to_rgb
 from scipy.stats import gaussian_kde
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QWidget
@@ -19,6 +19,7 @@ from .views import CutReportTab, StandPages, TreatmentReportTab, VisualizeTab
 
 class StandViewCoordinator(QWidget):
     _SLIDER_DEBOUNCE_MS = 150
+    _BASIN_PALETTE_SIZE = 64
 
     def __init__(self, rx_units: list[RxUnit], state: StandViewState) -> None:
         super().__init__()
@@ -44,6 +45,7 @@ class StandViewCoordinator(QWidget):
         self._raster_text = None
         self._raster_mode_key: tuple[int, bool] | None = None
         self._raster_scale_key: tuple[float | int | None, float | int | None] | None = None
+        self._basin_colormap = self._build_basin_colormap()
 
         self.sidebar = UnitSidebar(rx_units, self.unit_system)
         self.visualize_tab = VisualizeTab(self.unit_system)
@@ -272,11 +274,17 @@ class StandViewCoordinator(QWidget):
                 colorbar_label = display_name_for("canopy_height", self.unit_system)
                 self._set_dynamic_raster_limits(display_data, lower_bound=0.0)
             elif self.state.raster_mode == 1:
-                self._raster_image = axes.imshow(data, cmap="nipy_spectral")
+                basin_display = self._categorical_basin_display(data)
+                self._raster_image = axes.imshow(
+                    basin_display,
+                    cmap=self._basin_colormap,
+                    interpolation="nearest",
+                    vmin=0,
+                    vmax=self._BASIN_PALETTE_SIZE - 1,
+                )
                 if hillshade.size:
                     self._hillshade_image = axes.imshow(hillshade, cmap="Greys", alpha=0.5)
-                colorbar_label = "Basin ID (unique values)"
-                self._set_dynamic_raster_limits(data)
+                self._clear_raster_colorbar()
             elif self.state.raster_mode == 2:
                 colors = ("white", "#7bc043", "#fdf498", "#f37736", "#ee4035")
                 cmap = LinearSegmentedColormap.from_list("Clump Colors", colors, 5)
@@ -295,7 +303,9 @@ class StandViewCoordinator(QWidget):
 
             suffix = " (Treated)" if self.state.show_treatment else ""
             axes.set_title(f"{unit.name} {self.sidebar.stand_controls.raster_mode.currentText()}{suffix}")
-            if self._raster_image is not None and colorbar_label is not None:
+            if self.state.raster_mode == 1:
+                pass
+            elif self._raster_image is not None and colorbar_label is not None:
                 self._update_raster_colorbar(colorbar_label, colorbar_ticks, colorbar_ticklabels)
 
         axes.set_xticks([])
@@ -504,6 +514,46 @@ class StandViewCoordinator(QWidget):
         if max_value <= min_value:
             max_value = min_value + 1.0
         self._raster_image.set_clim(float(min_value), float(max_value))
+
+    @classmethod
+    def _build_basin_colormap(cls) -> ListedColormap:
+        hues = (np.arange(cls._BASIN_PALETTE_SIZE, dtype=float) * 0.6180339887498949) % 1.0
+        saturations = np.where(np.arange(cls._BASIN_PALETTE_SIZE) % 2 == 0, 0.70, 0.55)
+        values = np.where(np.arange(cls._BASIN_PALETTE_SIZE) % 4 < 2, 0.92, 0.78)
+        hsv = np.column_stack((hues, saturations, values))
+        colors = hsv_to_rgb(hsv)
+        colors[0] = (0.65, 0.65, 0.65)
+        cmap = ListedColormap(colors, name="Basin Colors")
+        cmap.set_bad((1.0, 1.0, 1.0, 1.0))
+        return cmap
+
+    def _categorical_basin_display(self, data: np.ndarray) -> np.ma.MaskedArray:
+        array = np.asarray(data)
+        if array.size == 0:
+            return np.ma.masked_array(array, mask=np.ones_like(array, dtype=bool))
+
+        if not np.issubdtype(array.dtype, np.integer):
+            integer_array = array.astype(np.int64, copy=False)
+        else:
+            integer_array = array
+
+        dtype_sentinel = np.iinfo(integer_array.dtype).min
+        int32_sentinel = np.int64(np.iinfo(np.int32).min)
+        mask = (integer_array == dtype_sentinel) | (integer_array == int32_sentinel)
+        hashed = np.zeros(integer_array.shape, dtype=np.uint8)
+        removed_mask = (~mask) & (integer_array == 1) if self.state.show_treatment else np.zeros_like(mask, dtype=bool)
+        valid_tree_mask = (~mask) & (~removed_mask)
+        if np.any(valid_tree_mask):
+            ids = integer_array[valid_tree_mask].astype(np.uint64, copy=False)
+            ids ^= ids >> np.uint64(33)
+            ids *= np.uint64(0xff51afd7ed558ccd)
+            ids ^= ids >> np.uint64(33)
+            ids *= np.uint64(0xc4ceb9fe1a85ec53)
+            ids ^= ids >> np.uint64(33)
+            hashed[valid_tree_mask] = (np.mod(ids, self._BASIN_PALETTE_SIZE - 1) + 1).astype(np.uint8, copy=False)
+        hashed[removed_mask] = 0
+
+        return np.ma.masked_array(hashed, mask=mask)
 
     @staticmethod
     def _array_bounds(data: np.ndarray) -> tuple[float | None, float | None]:

@@ -34,7 +34,7 @@ namespace rxgaming {
         return raster_to_numpy(chm);
     }
 
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_basin() const {
+    py::array_t<int> RxGamingRxUnit::get_basin() const {
         return raster_to_numpy(basinMap);
     }
 
@@ -42,10 +42,10 @@ namespace rxgaming {
         return raster_to_numpy(hillshade);
     }
 
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_clump_map() const {
+    py::array_t<int> RxGamingRxUnit::get_clump_map() const {
         try {    
             std::unordered_map<int, int> taoIds;
-            lapis::Raster<int> clumpMap((lapis::Alignment)basinMap);
+            auto clumpMap = basinMap;
             auto rawClumps = getRawClumps(taos);
             for (size_t i = 0; i < taos.size(); ++i) {
                 auto e = clumpMap.extract(taos.x(i), taos.y(i), lapis::ExtractMethod::near);
@@ -103,7 +103,7 @@ namespace rxgaming {
         return(raster_to_numpy(thisChm));
     }
 
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_treat_basin() const {
+    py::array_t<int> RxGamingRxUnit::get_treat_basin() const {
         return(raster_to_numpy(getTreatBasin()));
     }
 
@@ -120,7 +120,7 @@ namespace rxgaming {
         return(raster_to_numpy(thisHill));
     }
 
-    py::array_t<lapis::cell_t> RxGamingRxUnit::get_treat_clump_map() const {
+    py::array_t<int> RxGamingRxUnit::get_treat_clump_map() const {
         try {
             auto b = getTreatBasin();
     
