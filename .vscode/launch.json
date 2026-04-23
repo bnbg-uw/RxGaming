@@ -12,7 +12,8 @@
             "justMyCode": false,
             "env": {
                 "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONPATH": "${workspaceFolder}/python"
+                "PYTHONPATH": "${workspaceFolder}/python",
+                "RXGAMING_TIMING": "1"
             }
         },
         {
@@ -27,7 +28,8 @@
             "justMyCode": false,
             "env": {
                 "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONPATH": "${workspaceFolder}/python"
+                "PYTHONPATH": "${workspaceFolder}/python",
+                "RXGAMING_TIMING": "1"
             }
         },
         {

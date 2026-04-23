@@ -33,8 +33,14 @@ class LandscapeReferenceTab(QWidget):
         self._axes = [self.ba_ax, self.mcs_ax, self.cc_ax]
         self._metric_names = ["ba", "mcs", "cc"]
         self._metric_labels = ["Basal Area", "Mean Clump Size", "Canopy Cover"]
+        self._reference_scatters = []
         self._unit_lines: list[Line2D] = []
+        self._target_markers = []
+        self._treated_markers = []
         self._annotations = []
+        self._current_to_target_arrows = []
+        self._target_to_treated_arrows = []
+        self._empty_texts = []
 
         layout = QVBoxLayout()
         layout.addWidget(self.canvas)
@@ -42,15 +48,17 @@ class LandscapeReferenceTab(QWidget):
 
         self.canvas.mpl_connect("motion_notify_event", self._on_hover)
         self.canvas.mpl_connect("button_press_event", self._on_click)
-        self.refresh()
+        self._initialize_artists()
 
     def set_unit_selected_callback(self, callback: Callable[[int], None]) -> None:
         self._on_unit_selected = callback
 
-    def refresh(self) -> None:
-        self.figure.legends.clear()
-        for axis in self._axes:
-            axis.clear()
+    def refresh(self, trigger: str = "refresh") -> None:
+        del trigger
+        self._refresh_impl()
+
+    def _refresh_impl(self) -> None:
+        self._clear_dynamic_annotations()
 
         ref_tph = self.array_to_display(np.asarray(self._reference.get("tph", []), dtype=float), "tph")
         ref_series = {
@@ -62,81 +70,108 @@ class LandscapeReferenceTab(QWidget):
             np.asarray([unit.currentStructure.tph for unit in self._rx_units], dtype=float), "tph"
         )
 
-        self._unit_lines = []
-        self._annotations = []
         if not self._rx_units:
             for axis, metric_name, metric_label in zip(self._axes, self._metric_names, self._metric_labels):
                 axis.set_title(metric_label)
                 axis.set_xlabel(display_name_for("tph", self._unit_system))
                 axis.set_ylabel(display_name_for(metric_name, self._unit_system))
-                axis.text(0.5, 0.5, "No units available", ha="center", va="center")
+            self._show_no_units_state()
             self.figure.tight_layout()
             self.canvas.draw_idle()
             return
 
-        for axis, metric_name, metric_label in zip(
-            self._axes, self._metric_names, self._metric_labels
+        self._hide_no_units_state()
+        for index, (axis, metric_name, metric_label) in enumerate(
+            zip(self._axes, self._metric_names, self._metric_labels)
         ):
             series = ref_series[metric_name]
             if ref_tph.size and series.size:
-                axis.scatter(ref_tph, series, color="#f28263", alpha=0.15, s=12, label="Reference")
+                self._reference_scatters[index].set_offsets(np.column_stack((ref_tph, series)))
+            else:
+                self._reference_scatters[index].set_offsets(np.empty((0, 2)))
 
             unit_values = np.asarray(
                 [getattr(unit.currentStructure, metric_name) for unit in self._rx_units],
                 dtype=float,
             )
             unit_values = self.array_to_display(unit_values, metric_name)
-            unit_line = axis.plot(unit_tph, unit_values, "b^", label="Units")[0]
-            self._unit_lines.append(unit_line)
+            self._unit_lines[index].set_data(unit_tph, unit_values)
 
             selected = self._selected_unit()
             target = selected.targetStructure
-            axis.plot(
-                [self.array_to_display(np.asarray([target.tph], dtype=float), "tph")[0]],
-                [self.array_to_display(np.asarray([getattr(target, metric_name)], dtype=float), metric_name)[0]],
-                "gs",
-                label="Target",
-            )
+            target_x = self.array_to_display(np.asarray([target.tph], dtype=float), "tph")[0]
+            target_y = self.array_to_display(np.asarray([getattr(target, metric_name)], dtype=float), metric_name)[0]
+            self._target_markers[index].set_data([target_x], [target_y])
             if selected.treatedStructure is not None:
                 treated = selected.treatedStructure
-                axis.plot(
-                    [self.array_to_display(np.asarray([treated.tph], dtype=float), "tph")[0]],
-                    [self.array_to_display(np.asarray([getattr(treated, metric_name)], dtype=float), metric_name)[0]],
-                    "mo",
-                    label="Treated",
-                )
-                axis.annotate(
+                treated_x = self.array_to_display(np.asarray([treated.tph], dtype=float), "tph")[0]
+                treated_y = self.array_to_display(np.asarray([getattr(treated, metric_name)], dtype=float), metric_name)[0]
+                self._treated_markers[index].set_data([treated_x], [treated_y])
+                self._target_to_treated_arrows[index] = axis.annotate(
                     "",
-                    xy=(
-                        self.array_to_display(np.asarray([treated.tph], dtype=float), "tph")[0],
-                        self.array_to_display(np.asarray([getattr(treated, metric_name)], dtype=float), metric_name)[0],
-                    ),
-                    xytext=(
-                        self.array_to_display(np.asarray([target.tph], dtype=float), "tph")[0],
-                        self.array_to_display(np.asarray([getattr(target, metric_name)], dtype=float), metric_name)[0],
-                    ),
+                    xy=(treated_x, treated_y),
+                    xytext=(target_x, target_y),
                     arrowprops={"arrowstyle": "->", "color": "#884ea0"},
                 )
+            else:
+                self._treated_markers[index].set_data([], [])
 
-            axis.annotate(
+            current_x = self.array_to_display(np.asarray([selected.currentStructure.tph], dtype=float), "tph")[0]
+            current_y = self.array_to_display(
+                np.asarray([getattr(selected.currentStructure, metric_name)], dtype=float), metric_name
+            )[0]
+            self._current_to_target_arrows[index] = axis.annotate(
                 "",
-                xy=(
-                    self.array_to_display(np.asarray([target.tph], dtype=float), "tph")[0],
-                    self.array_to_display(np.asarray([getattr(target, metric_name)], dtype=float), metric_name)[0],
-                ),
-                xytext=(
-                    self.array_to_display(np.asarray([selected.currentStructure.tph], dtype=float), "tph")[0],
-                    self.array_to_display(
-                        np.asarray([getattr(selected.currentStructure, metric_name)], dtype=float), metric_name
-                    )[0],
-                ),
+                xy=(target_x, target_y),
+                xytext=(current_x, current_y),
                 arrowprops={"arrowstyle": "->", "color": "#2e7d32"},
             )
 
             axis.set_title(metric_label)
             axis.set_xlabel(display_name_for("tph", self._unit_system))
             axis.set_ylabel(display_name_for(metric_name, self._unit_system))
+            axis.relim()
+            axis.autoscale_view()
 
+        max_mcs = max(
+            [float(np.max(ref_series["mcs"])) if ref_series["mcs"].size else 0.0]
+            + [float(unit.currentStructure.mcs) for unit in self._rx_units]
+        )
+        if max_mcs >= 10:
+            self.mcs_ax.set_yscale("log")
+            self.mcs_ax.set_ylim(bottom=1)
+        else:
+            self.mcs_ax.set_yscale("linear")
+
+        self.figure.tight_layout()
+        self.canvas.draw_idle()
+
+    def _initialize_artists(self) -> None:
+        legend_handles = [
+            Line2D([], [], color="#f28263", marker="o", linestyle="None", alpha=0.4, label="Reference"),
+            Line2D([], [], color="blue", marker="^", linestyle="None", label="Units"),
+            Line2D([], [], color="green", marker="s", linestyle="None", label="Targets"),
+            Line2D([], [], color="magenta", marker="o", linestyle="None", label="Treated"),
+        ]
+        self.figure.legend(legend_handles, ["Reference", "Units", "Targets", "Treated"], loc="right")
+
+        self._reference_scatters = []
+        self._unit_lines = []
+        self._target_markers = []
+        self._treated_markers = []
+        self._annotations = []
+        self._current_to_target_arrows = [None, None, None]
+        self._target_to_treated_arrows = [None, None, None]
+        self._empty_texts = []
+
+        for axis, metric_name, metric_label in zip(self._axes, self._metric_names, self._metric_labels):
+            axis.set_title(metric_label)
+            axis.set_xlabel(display_name_for("tph", self._unit_system))
+            axis.set_ylabel(display_name_for(metric_name, self._unit_system))
+            self._reference_scatters.append(axis.scatter([], [], color="#f28263", alpha=0.15, s=12, label="Reference"))
+            self._unit_lines.append(axis.plot([], [], "b^", label="Units")[0])
+            self._target_markers.append(axis.plot([], [], "gs", label="Target")[0])
+            self._treated_markers.append(axis.plot([], [], "mo", label="Treated")[0])
             annotation = axis.annotate(
                 "",
                 xy=(0.0, 0.0),
@@ -147,24 +182,34 @@ class LandscapeReferenceTab(QWidget):
             )
             annotation.set_visible(False)
             self._annotations.append(annotation)
+            empty_text = axis.text(0.5, 0.5, "No units available", ha="center", va="center", transform=axis.transAxes)
+            empty_text.set_visible(False)
+            self._empty_texts.append(empty_text)
 
-        max_mcs = max(
-            [float(np.max(ref_series["mcs"])) if ref_series["mcs"].size else 0.0]
-            + [float(unit.currentStructure.mcs) for unit in self._rx_units]
-        )
-        if max_mcs >= 10:
-            self.mcs_ax.set_yscale("log")
-            self.mcs_ax.set_ylim(bottom=1)
+    def _clear_dynamic_annotations(self) -> None:
+        for annotations in (self._current_to_target_arrows, self._target_to_treated_arrows):
+            for index, annotation in enumerate(annotations):
+                if annotation is not None:
+                    annotation.remove()
+                    annotations[index] = None
 
-        legend_handles = [
-            Line2D([], [], color="#f28263", marker="o", linestyle="None", alpha=0.4, label="Reference"),
-            Line2D([], [], color="blue", marker="^", linestyle="None", label="Units"),
-            Line2D([], [], color="green", marker="s", linestyle="None", label="Targets"),
-            Line2D([], [], color="magenta", marker="o", linestyle="None", label="Treated"),
-        ]
-        self.figure.legend(legend_handles, ["Reference", "Units", "Targets", "Treated"], loc="right")
-        self.figure.tight_layout()
-        self.canvas.draw_idle()
+    def _show_no_units_state(self) -> None:
+        for empty_text in self._empty_texts:
+            empty_text.set_visible(True)
+        for reference, unit_line, target, treated in zip(
+            self._reference_scatters,
+            self._unit_lines,
+            self._target_markers,
+            self._treated_markers,
+        ):
+            reference.set_offsets(np.empty((0, 2)))
+            unit_line.set_data([], [])
+            target.set_data([], [])
+            treated.set_data([], [])
+
+    def _hide_no_units_state(self) -> None:
+        for empty_text in self._empty_texts:
+            empty_text.set_visible(False)
 
     def _selected_unit(self) -> RxUnit:
         if not self._rx_units:

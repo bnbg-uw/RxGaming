@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QResizeEvent, QShowEvent
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
@@ -14,6 +15,9 @@ from .units import UnitSystem
 
 
 class VisualizeTab(QWidget):
+    _RASTER_COLORBAR_PAD = 0.02
+    _RASTER_COLORBAR_WIDTH = 0.03
+
     def __init__(self, unit_system: UnitSystem) -> None:
         super().__init__()
         self._unit_system = unit_system
@@ -21,10 +25,44 @@ class VisualizeTab(QWidget):
         self.raster_figure = Figure()
         self.raster_canvas = FigureCanvas(self.raster_figure)
         self.raster_axes = self.raster_figure.add_subplot(111)
+        # Keep both the raster and colorbar in fixed axes so redraws do not
+        # resize the image area as colorbars are rebuilt or updated.
+        self.raster_figure.subplots_adjust(left=0.03, right=0.84, top=0.94, bottom=0.04)
+        self.raster_colorbar_axes = self.raster_figure.add_axes([0.86, 0.04, 0.03, 0.90])
+        self.raster_colorbar_axes.set_visible(False)
+        self.sync_raster_colorbar_axes()
 
         layout = QVBoxLayout()
         layout.addWidget(self.raster_canvas, stretch=1)
         self.setLayout(layout)
+        QTimer.singleShot(0, self._sync_raster_colorbar_after_layout)
+
+    def sync_raster_colorbar_axes(self) -> None:
+        raster_position = self.raster_axes.get_position()
+        left = min(
+            raster_position.x1 + self._RASTER_COLORBAR_PAD,
+            1.0 - self._RASTER_COLORBAR_WIDTH,
+        )
+        self.raster_colorbar_axes.set_position(
+            [
+                left,
+                raster_position.y0,
+                self._RASTER_COLORBAR_WIDTH,
+                raster_position.height,
+            ]
+        )
+
+    def _sync_raster_colorbar_after_layout(self) -> None:
+        self.sync_raster_colorbar_axes()
+        self.raster_canvas.draw_idle()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._sync_raster_colorbar_after_layout)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.sync_raster_colorbar_axes()
 
 
 class TreatmentReportTab(QWidget):

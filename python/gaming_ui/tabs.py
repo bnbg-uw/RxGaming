@@ -25,16 +25,19 @@ class GamingTabs(QTabWidget):
         self.rx_units = project_area.rxUnits
         self._persistence = persistence or NoOpGamingSessionPersistence()
         self._state = self._persistence.load_initial_state(saved_state)
+        self._landscape_dirty = True
 
         self.stand_tab = StandViewCoordinator(self.rx_units, self._state)
         self.landscape_tab = LandscapeReferenceTab(self.rx_units, project_settings, self._state)
 
         self.stand_tab.set_state_changed_callback(self._handle_stand_state_change)
+        self.stand_tab.set_landscape_invalidated_callback(self._invalidate_landscape_tab)
         self.landscape_tab.set_unit_selected_callback(self.stand_tab.select_unit)
 
         self.addTab(self.stand_tab, "Stand View")
         self.addTab(self.landscape_tab, "Landscape View")
-        self._handle_stand_state_change()
+        self.currentChanged.connect(self._on_tab_changed)
+        self._handle_stand_state_change("initial_load")
 
     @property
     def raster_figure(self) -> Figure:
@@ -80,6 +83,23 @@ class GamingTabs(QTabWidget):
     def current_raster_array(self) -> np.ndarray:
         return self.stand_tab.current_raster_array()
 
-    def _handle_stand_state_change(self) -> None:
-        self.landscape_tab.refresh()
+    def _handle_stand_state_change(self, reason: str) -> None:
+        self._refresh_landscape_if_needed(trigger=reason)
         self._persistence.save_session(self._state)
+
+    def _invalidate_landscape_tab(self) -> None:
+        self._landscape_dirty = True
+        self._refresh_landscape_if_needed(trigger="landscape_invalidated")
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 1:
+            self._refresh_landscape_if_needed(trigger="tab_changed")
+
+    def _refresh_landscape_if_needed(self, *, force: bool = False, trigger: str) -> None:
+        if not force:
+            if not self._landscape_dirty:
+                return
+            if self.currentIndex() != 1:
+                return
+        self.landscape_tab.refresh(trigger=trigger)
+        self._landscape_dirty = False

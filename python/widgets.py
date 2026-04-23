@@ -132,6 +132,7 @@ class QMainWindowRx(QMainWindow):
 
 class SliderWithValue(QWidget):
     valueChanged = Signal(int)
+    valueFinalized = Signal(int)
 
     def __init__(self, parent: QWidget | Qt.Orientation | None = None):
         orientation = parent if isinstance(parent, Qt.Orientation) else Qt.Orientation.Horizontal
@@ -202,10 +203,14 @@ class SliderWithValue(QWidget):
 
         self.setLayout(layout)
         self._slider.valueChanged.connect(self._on_value_changed)
+        self._slider.sliderReleased.connect(self._on_slider_released)
 
     def _on_value_changed(self, value: int) -> None:
         self._value_label.setText(f"{value:.0f}")
         self.valueChanged.emit(value)
+
+    def _on_slider_released(self) -> None:
+        self.valueFinalized.emit(self._slider.value())
 
     def orientation(self) -> Qt.Orientation:
         return self._slider.orientation()

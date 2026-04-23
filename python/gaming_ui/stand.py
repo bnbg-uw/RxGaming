@@ -7,9 +7,10 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
 from scipy.stats import gaussian_kde
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
-from rxgaming_core import RxUnit, StructureSummary, TreatmentEngine, TreatmentResult
+from rxgaming_core import RxUnit, StructureSummary, TreatmentEngine
 from .sidebar import UnitSidebar
 from .state import StandViewState
 from .units import FEET_PER_METER, array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_value, label_for
@@ -17,14 +18,32 @@ from .views import CutReportTab, StandPages, TreatmentReportTab, VisualizeTab
 
 
 class StandViewCoordinator(QWidget):
+    _SLIDER_DEBOUNCE_MS = 150
+
     def __init__(self, rx_units: list[RxUnit], state: StandViewState) -> None:
         super().__init__()
         self.rx_units = rx_units
         self.state = state
         self.unit_system = state.unit_system
-        self._state_changed_callback: Callable[[], None] | None = None
+        self._state_changed_callback: Callable[[str], None] | None = None
+        self._landscape_invalidated_callback: Callable[[], None] | None = None
         self.treatment_engine = TreatmentEngine()
         self._mcs_prop_table = self._load_mcs_prop_table()
+        self._treated_unit_ids: set[int] = set()
+        self._pending_dbh_cutoff = self.state.dbh_cutoff
+        self._dbh_update_timer = QTimer(self)
+        self._dbh_update_timer.setSingleShot(True)
+        self._dbh_update_timer.setInterval(self._SLIDER_DEBOUNCE_MS)
+        self._dbh_update_timer.timeout.connect(self._flush_cutoff_change)
+        self._raster_dirty = True
+        self._treatment_report_dirty = True
+        self._cut_report_dirty = True
+        self._raster_colorbar = None
+        self._raster_image = None
+        self._hillshade_image = None
+        self._raster_text = None
+        self._raster_mode_key: tuple[int, bool] | None = None
+        self._raster_scale_key: tuple[float | int | None, float | int | None] | None = None
 
         self.sidebar = UnitSidebar(rx_units, self.unit_system)
         self.visualize_tab = VisualizeTab(self.unit_system)
@@ -40,8 +59,11 @@ class StandViewCoordinator(QWidget):
         self._connect_signals()
         self._restore_state()
 
-    def set_state_changed_callback(self, callback: Callable[[], None]) -> None:
+    def set_state_changed_callback(self, callback: Callable[[str], None]) -> None:
         self._state_changed_callback = callback
+
+    def set_landscape_invalidated_callback(self, callback: Callable[[], None]) -> None:
+        self._landscape_invalidated_callback = callback
 
     @property
     def current_figure(self) -> Figure:
@@ -117,6 +139,7 @@ class StandViewCoordinator(QWidget):
         self.sidebar.structure_info.set_targets_changed_callback(self._on_targets_changed)
         self.sidebar.stand_controls.raster_mode.currentIndexChanged.connect(self._on_raster_mode_changed)
         self.sidebar.stand_controls.dbh_cutoff.valueChanged.connect(self._on_cutoff_changed)
+        self.sidebar.stand_controls.dbh_cutoff.valueFinalized.connect(self._on_cutoff_finalized)
         self.sidebar.stand_controls.show_treatment_button.toggled.connect(self._on_show_treatment_toggled)
         self.pages.currentChanged.connect(self._on_page_changed)
 
@@ -128,125 +151,163 @@ class StandViewCoordinator(QWidget):
 
         if self.rx_units:
             self.select_unit(self.state.selected_unit_index)
-        self.refresh_all()
+        self.refresh_all(trigger="restore_state")
 
     def _on_unit_changed(self, current: object, previous: object) -> None:
         del previous
         row = current.row() if getattr(current, "isValid", lambda: False)() else 0
         self.state.selected_unit_index = max(0, row)
-        self.refresh_all()
-        self._notify_state_changed()
+        self._mark_all_pages_dirty()
+        self.refresh_all(trigger="unit_changed")
+        self._notify_state_changed("unit_changed")
 
     def _on_targets_changed(self) -> None:
         self.sidebar.model.refresh()
-        self.refresh_all()
-        self._notify_state_changed()
+        self._mark_all_pages_dirty()
+        self.refresh_all(trigger="targets_changed")
+        self._notify_landscape_invalidated()
+        self._notify_state_changed("targets_changed")
 
     def _on_raster_mode_changed(self, index: int) -> None:
         self.state.raster_mode = index
-        self.update_raster_canvas()
-        self._notify_state_changed()
+        self._raster_dirty = True
+        self.refresh_current_page(trigger="raster_mode_changed")
+        self._notify_state_changed("raster_mode_changed")
 
     def _on_cutoff_changed(self, value: int) -> None:
-        self.state.dbh_cutoff = dbh_from_display(float(value), self.unit_system)
-        self.update_treatment_report()
-        self._notify_state_changed()
+        self._pending_dbh_cutoff = dbh_from_display(float(value), self.unit_system)
+        self.state.dbh_cutoff = self._pending_dbh_cutoff
+        self._treatment_report_dirty = True
+        self._dbh_update_timer.start()
+        self._notify_state_changed("cutoff_changed")
+
+    def _on_cutoff_finalized(self, value: int) -> None:
+        self._pending_dbh_cutoff = dbh_from_display(float(value), self.unit_system)
+        self.state.dbh_cutoff = self._pending_dbh_cutoff
+        self._flush_cutoff_change(trigger="cutoff_finalized")
+
+    def _flush_cutoff_change(self, trigger: str = "cutoff_debounced") -> None:
+        self._dbh_update_timer.stop()
+        self.state.dbh_cutoff = self._pending_dbh_cutoff
+        self.refresh_current_page(trigger=trigger)
 
     def _on_show_treatment_toggled(self, checked: bool) -> None:
         if checked and self.rx_units:
-            self.treatment_engine.do_treatment(self.current_unit(), self.dbh_min(), self.dbh_max())
+            unit = self.current_unit()
+            self.treatment_engine.do_treatment(unit, self.dbh_min(), self.dbh_max())
+            self._treated_unit_ids.add(id(unit))
             self.sidebar.model.refresh()
+            self._notify_landscape_invalidated()
         self.state.show_treatment = checked
-        self.refresh_all()
-        self._notify_state_changed()
+        self._mark_all_pages_dirty()
+        self.refresh_all(trigger="show_treatment_toggled")
+        self._notify_state_changed("show_treatment_toggled")
 
     def _on_page_changed(self, index: int) -> None:
         self.state.active_page = index
-        self.refresh_current_page()
-        self._notify_state_changed()
+        self.refresh_current_page(trigger="page_changed")
+        self._notify_state_changed("page_changed")
 
-    def refresh_all(self) -> None:
+    def refresh_all(self, trigger: str = "refresh_all") -> None:
         if not self.rx_units:
-            self.update_raster_canvas()
-            self.update_treatment_report()
-            self.update_cut_report()
+            self._mark_all_pages_dirty()
+            self.refresh_current_page(trigger=trigger)
             return
         self.sidebar.structure_info.update_for_unit(self.current_unit())
-        self.update_raster_canvas()
-        self.update_treatment_report()
-        self.update_cut_report()
+        self.refresh_current_page(trigger=trigger)
 
-    def refresh_current_page(self) -> None:
+    def refresh_current_page(self, trigger: str = "refresh_current_page") -> None:
         if self.state.active_page == 1:
-            self.update_treatment_report()
+            if not self._treatment_report_dirty:
+                return
+            self.update_treatment_report(trigger=trigger)
         elif self.state.active_page == 2:
-            self.update_cut_report()
+            if not self._cut_report_dirty:
+                return
+            self.update_cut_report(trigger=trigger)
         else:
-            self.update_raster_canvas()
+            if not self._raster_dirty:
+                return
+            self.update_raster_canvas(trigger=trigger)
 
-    def update_raster_canvas(self) -> None:
+    def _mark_all_pages_dirty(self) -> None:
+        self._raster_dirty = True
+        self._treatment_report_dirty = True
+        self._cut_report_dirty = True
+
+    def update_raster_canvas(self, trigger: str = "update_raster_canvas") -> None:
+        self._update_raster_canvas_impl()
+        self._raster_dirty = False
+
+    def _update_raster_canvas_impl(self) -> None:
         figure = self.visualize_tab.raster_figure
-        figure.clear()
-        axes = figure.add_subplot(111)
+        axes = self.visualize_tab.raster_axes
         self.visualize_tab.raster_axes = axes
+        self.visualize_tab.sync_raster_colorbar_axes()
+        axes.cla()
+        self._raster_image = None
+        self._hillshade_image = None
+        self._raster_text = None
 
         if not self.rx_units:
             axes.text(0.5, 0.5, "No units available", ha="center", va="center")
+            self._clear_raster_colorbar()
         else:
             unit = self.current_unit()
             data = self.current_raster_array()
             hillshade = unit.get_treat_hillshade() if self.state.show_treatment else unit.get_hillshade()
-            colorbar = None
+            colorbar_label = None
+            colorbar_ticks = None
+            colorbar_ticklabels = None
 
             if data.size == 0:
-                axes.text(0.5, 0.5, "No raster data", ha="center", va="center")
+                self._raster_text = axes.text(0.5, 0.5, "No raster data", ha="center", va="center")
+                self._clear_raster_colorbar()
 
-            if self.state.raster_mode == 0:
+            elif self.state.raster_mode == 0:
                 display_data = array_to_display("canopy_height", data, self.unit_system)
-                img = axes.imshow(display_data, cmap="coolwarm", vmin=0)
-                axes.imshow(hillshade, cmap="Greys", alpha=0.5)
-                colorbar = figure.colorbar(
-                    img,
-                    orientation="vertical",
-                    label=display_name_for("canopy_height", self.unit_system),
-                )
+                self._raster_image = axes.imshow(display_data, cmap="coolwarm", vmin=0)
+                if hillshade.size:
+                    self._hillshade_image = axes.imshow(hillshade, cmap="Greys", alpha=0.5)
+                colorbar_label = display_name_for("canopy_height", self.unit_system)
+                self._set_dynamic_raster_limits(display_data, lower_bound=0.0)
             elif self.state.raster_mode == 1:
-                img = axes.imshow(data, cmap="nipy_spectral")
-                axes.imshow(hillshade, cmap="Greys", alpha=0.5)
-                colorbar = figure.colorbar(img, orientation="vertical", label="Basin ID (unique values)")
+                self._raster_image = axes.imshow(data, cmap="nipy_spectral")
+                if hillshade.size:
+                    self._hillshade_image = axes.imshow(hillshade, cmap="Greys", alpha=0.5)
+                colorbar_label = "Basin ID (unique values)"
+                self._set_dynamic_raster_limits(data)
             elif self.state.raster_mode == 2:
                 colors = ("white", "#7bc043", "#fdf498", "#f37736", "#ee4035")
                 cmap = LinearSegmentedColormap.from_list("Clump Colors", colors, 5)
                 boundaries = (-0.5, 0.5, 1.5, 4.5, 9.5, 99)
                 norm = BoundaryNorm(boundaries, len(boundaries))
-                img = axes.imshow(data, cmap=cmap, norm=norm)
+                self._raster_image = axes.imshow(data, cmap=cmap, norm=norm)
                 if hillshade.size:
-                    axes.imshow(hillshade, cmap="Greys", alpha=0.5)
-                colorbar = figure.colorbar(
-                    img,
-                    orientation="vertical",
-                    label="Clump Map (Clump bins)",
-                    ticks=[0, 1, 3, 7, 55],
-                )
-                colorbar.ax.set_yticklabels(["0", "1", "2-4", "4-9", "10+"])
+                    self._hillshade_image = axes.imshow(hillshade, cmap="Greys", alpha=0.5)
+                colorbar_label = "Clump Map (Clump bins)"
+                colorbar_ticks = [0, 1, 3, 7, 55]
+                colorbar_ticklabels = ["0", "1", "2-4", "4-9", "10+"]
             else:
-                if data.size == 0:
-                    axes.text(0.5, 0.5, "No raster data", ha="center", va="center")
-                else:
-                    img = axes.imshow(data, cmap="Greys")
-                    colorbar = figure.colorbar(img, orientation="vertical", label="Hillshade")
+                self._raster_image = axes.imshow(data, cmap="Greys")
+                colorbar_label = "Hillshade"
+                self._set_dynamic_raster_limits(data)
 
             suffix = " (Treated)" if self.state.show_treatment else ""
             axes.set_title(f"{unit.name} {self.sidebar.stand_controls.raster_mode.currentText()}{suffix}")
-            if colorbar is not None:
-                colorbar.ax.tick_params(labelsize=8)
+            if self._raster_image is not None and colorbar_label is not None:
+                self._update_raster_colorbar(colorbar_label, colorbar_ticks, colorbar_ticklabels)
 
         axes.set_xticks([])
         axes.set_yticks([])
-        figure.tight_layout()
         self.visualize_tab.raster_canvas.draw_idle()
 
-    def update_treatment_report(self) -> None:
+    def update_treatment_report(self, trigger: str = "update_treatment_report") -> None:
+        del trigger
+        self._update_treatment_report_impl()
+        self._treatment_report_dirty = False
+
+    def _update_treatment_report_impl(self) -> None:
         report = self.treatment_report_tab
         report.current_ba_axes.clear()
         report.current_mcs_axes.clear()
@@ -268,6 +329,18 @@ class StandViewCoordinator(QWidget):
             return
 
         unit = self.current_unit()
+        has_treatment = self._has_treatment_results(unit)
+        current_points = unit.get_taos()
+        current_ba = self._tree_ba_distribution(current_points)
+        current_csd = self._safe_array(unit.get_clump_sizes())
+
+        if has_treatment:
+            treated_points = unit.get_treat_taos()
+            treated_ba = self._tree_ba_distribution(treated_points)
+            treated_csd = self._safe_array(unit.get_treat_clump_sizes())
+        else:
+            treated_ba = current_ba
+            treated_csd = current_csd
 
         report.current_label.setText(
             "Current\n"
@@ -307,14 +380,10 @@ class StandViewCoordinator(QWidget):
             "Post-Treatment Clump Size Distribution",
         )
 
-        current_ba = self._tree_ba_distribution(unit.get_taos())
-        current_csd = self._safe_array(unit.get_clump_sizes())
         self._draw_density(report.current_ba_axes, current_ba)
         self._draw_density(report.current_mcs_axes, current_csd)
         report.displayed_mcs_prop.setText("")
 
-        treated_ba = self._tree_ba_distribution(unit.get_treat_taos())
-        treated_csd = self._safe_array(unit.get_treat_clump_sizes())
         self._draw_density(report.displayed_ba_axes, treated_ba)
         self._draw_density(report.displayed_mcs_axes, treated_csd)
         self._sync_axis_limits(report.current_ba_axes, report.displayed_ba_axes)
@@ -326,7 +395,15 @@ class StandViewCoordinator(QWidget):
         report.displayed_ba_canvas.draw_idle()
         report.displayed_mcs_canvas.draw_idle()
 
-    def update_cut_report(self) -> None:
+    def update_cut_report(self, trigger: str = "update_cut_report") -> None:
+        del trigger
+        self._update_cut_report_impl()
+        self._cut_report_dirty = False
+
+    def _has_treatment_results(self, unit: RxUnit) -> bool:
+        return id(unit) in self._treated_unit_ids
+
+    def _update_cut_report_impl(self) -> None:
         report = self.cut_report_tab
         report.cut_axes.clear()
 
@@ -357,9 +434,90 @@ class StandViewCoordinator(QWidget):
 
         report.cut_canvas.draw_idle()
 
-    def _notify_state_changed(self) -> None:
+    def _notify_state_changed(self, reason: str) -> None:
         if self._state_changed_callback is not None:
-            self._state_changed_callback()
+            self._state_changed_callback(reason)
+
+    def _notify_landscape_invalidated(self) -> None:
+        if self._landscape_invalidated_callback is not None:
+            self._landscape_invalidated_callback()
+
+    def _clear_raster_colorbar(self) -> None:
+        if self._raster_colorbar is not None:
+            self.visualize_tab.sync_raster_colorbar_axes()
+            self.visualize_tab.raster_colorbar_axes.cla()
+            self.visualize_tab.raster_colorbar_axes.set_visible(False)
+            self._raster_colorbar = None
+        self._raster_mode_key = None
+        self._raster_scale_key = None
+
+    def _update_raster_colorbar(
+        self,
+        label: str,
+        ticks: list[float] | None = None,
+        ticklabels: list[str] | None = None,
+    ) -> None:
+        if self._raster_image is None:
+            self._clear_raster_colorbar()
+            return
+
+        mode_key = (self.state.raster_mode, self.state.show_treatment)
+        clim = self._raster_image.get_clim()
+        scale_key = (clim[0], clim[1])
+        needs_rebuild = (
+            self._raster_colorbar is None
+            or self._raster_mode_key != mode_key
+            or self._raster_scale_key != scale_key
+        )
+        if needs_rebuild:
+            self._clear_raster_colorbar()
+            self.visualize_tab.sync_raster_colorbar_axes()
+            self._raster_colorbar = self.visualize_tab.raster_figure.colorbar(
+                self._raster_image,
+                cax=self.visualize_tab.raster_colorbar_axes,
+                orientation="vertical",
+                label=label,
+                ticks=ticks,
+            )
+            self.visualize_tab.raster_colorbar_axes.set_visible(True)
+        else:
+            self._raster_colorbar.update_normal(self._raster_image)
+            self._raster_colorbar.set_label(label)
+            if ticks is not None:
+                self._raster_colorbar.set_ticks(ticks)
+
+        self._raster_mode_key = mode_key
+        self._raster_scale_key = scale_key
+        if self._raster_colorbar is not None:
+            if ticklabels is not None:
+                self._raster_colorbar.ax.set_yticklabels(ticklabels)
+            self._raster_colorbar.ax.tick_params(labelsize=8)
+
+    def _set_dynamic_raster_limits(self, data: np.ndarray, lower_bound: float | None = None) -> None:
+        if self._raster_image is None:
+            return
+        min_value, max_value = self._array_bounds(data)
+        if lower_bound is not None:
+            min_value = lower_bound
+        if min_value is None or max_value is None:
+            min_value, max_value = (0.0, 1.0)
+        if max_value <= min_value:
+            max_value = min_value + 1.0
+        self._raster_image.set_clim(float(min_value), float(max_value))
+
+    @staticmethod
+    def _array_bounds(data: np.ndarray) -> tuple[float | None, float | None]:
+        array = np.asarray(data)
+        if array.size == 0:
+            return (None, None)
+        if np.issubdtype(array.dtype, np.integer):
+            sentinel = np.iinfo(array.dtype).min
+            array = array[array != sentinel]
+        else:
+            array = array[np.isfinite(array)]
+        if array.size == 0:
+            return (None, None)
+        return (float(np.min(array)), float(np.max(array)))
 
     @staticmethod
     def _configure_density_axes(
