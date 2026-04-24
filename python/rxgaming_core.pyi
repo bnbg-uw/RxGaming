@@ -13,7 +13,7 @@ IntArray = npt.NDArray[np.integer]
 
 def set_proj_db_path(path: str) -> None: ...
 def set_seed(seed: int) -> None: ...
-def get_ba_dist(taos: FloatArray) -> FloatArray: ...
+def build_project_area_with_progress(ps: ProjectSettings, callback: object = ...) -> ProjectArea: ...
 
 
 class StructureSummary:
@@ -32,6 +32,15 @@ class TreatmentResult(Enum):
     success: TreatmentResult
     diameterFailure: TreatmentResult
     cuttingFailure: TreatmentResult
+
+
+class ProgressEvent:
+    stage: str
+    message: str
+    unitIndex: int
+    unitName: str
+    completed: int
+    total: int
 
 
 class ProjectSettings:

@@ -16,11 +16,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import pickle
-import sys
 import traceback
-from typing import Callable, Any
+from typing import Any, Optional
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -35,17 +34,29 @@ from PySide6.QtWidgets import (
 
 from activity import Activity, SavedState, WindowMode
 from gamingactivity import GamingActivity
-from rxgaming_core import ProjectSettings
+from rxgaming_core import ProjectArea, ProjectSettings
 from widgets import QFileSelectionLineEdit
+
+try:
+    from rxgaming_core import build_project_area_with_progress
+except ImportError:
+    def build_project_area_with_progress(ps: ProjectSettings, callback: Any = None) -> ProjectArea:
+        del callback
+        return ProjectArea(ps)
 
 
 class ProjectSettingsActivity(Activity):
-    """Collect project inputs and build a ``ProjectSettings`` instance."""
+    """Collect project inputs and build the native project area in the background."""
 
     def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
         self.save_file_location = ""
-        self.prop_table_path: str = kwargs["prop_table_path"]
-        self.fia_path: str = kwargs["fia_path"]
+        self.prop_table_path = kwargs["prop_table_path"]
+        self.fia_path = kwargs["fia_path"]
+        self.worker_thread = None
+        self.worker = None
+        self._closed = False
+        self._pending_worker_result = None
+        self._worker_finished = False
 
         assert isinstance(self.prop_table_path, str)
         assert isinstance(self.fia_path, str)
@@ -88,30 +99,39 @@ class ProjectSettingsActivity(Activity):
         outer_layout.addWidget(self.text_output)
 
         self.window.setLayout(outer_layout)
-        self.window.setWindowTitle(f"Project settings. Rxgaming tool version: {Activity.version}")
+        self.window.setWindowTitle("Project settings. Rxgaming tool version: {0}".format(Activity.version))
 
         self.auto_save_checkbox.stateChanged.connect(self.save_changed)
         self.start_button.clicked.connect(self.start_clicked)
         self.save_button.clicked.connect(self.save_clicked)
         self.save_as_button.clicked.connect(self.save_as_clicked)
 
-        if (value := saved_state.get("ProjectSettingsActivity.prj_name")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.prj_name")
+        if value is not None:
             self.prj_name_edit.setText(value)
-        if (value := saved_state.get("ProjectSettingsActivity.unit_poly_path")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.unit_poly_path")
+        if value is not None:
             self.unit_poly_path_edit.set_text(value)
-        if (value := saved_state.get("ProjectSettingsActivity.reference_data_path")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.reference_data_path")
+        if value is not None:
             self.reference_data_path_edit.set_text(value)
-        if (value := saved_state.get("ProjectSettingsActivity.lidar_data_path")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.lidar_data_path")
+        if value is not None:
             self.lidar_data_path_edit.set_text(value)
-        if (value := saved_state.get("ProjectSettingsActivity.unit_name")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.unit_name")
+        if value is not None:
             self.unit_name_edit.setText(value)
-        if (value := saved_state.get("ProjectSettingsActivity.threads")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.threads")
+        if value is not None:
             self.threads_edit.setValue(value)
-        if (value := saved_state.get("ProjectSettingsActivity.auto_save")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.auto_save")
+        if value is not None:
             self.auto_save_checkbox.setChecked(value)
-        if (value := saved_state.get("ProjectSettingsActivity.auto_save_line")) is not None:
+        value = saved_state.get("ProjectSettingsActivity.auto_save_line")
+        if value is not None:
             self.auto_save_line_edit.set_text(value)
-        if (value := saved_state.get("save_file_location")) is not None:
+        value = saved_state.get("save_file_location")
+        if value is not None:
             self.save_file_location = value
 
     def save(self) -> SavedState:
@@ -127,6 +147,8 @@ class ProjectSettingsActivity(Activity):
         }
 
     def start_clicked(self, checked: bool = False) -> None:
+        del checked
+
         auto_save_path = Path(self.auto_save_line_edit.text()) if self.auto_save_checkbox.isChecked() else None
         unit_poly_path = Path(self.unit_poly_path_edit.text())
         lidar_data_path = Path(self.lidar_data_path_edit.text())
@@ -155,47 +177,67 @@ class ProjectSettingsActivity(Activity):
             self.notify_exception("The reference dataset expected file type is csv. Enter a valid csv before continuing.")
             return
 
+        self.text_output.clear()
+        self._append_progress("Processing started:")
         self.start_button.setEnabled(False)
-        sys.stdout = WriteStream(self._append_output)
-        print("Processing started:")
+        self._pending_worker_result = None
+        self._worker_finished = False
 
-        try:
-            project_settings = ProjectSettings(
-                self.prj_name_edit.text(),
-                str(unit_poly_path),
-                str(reference_data_path) if reference_data_path is not None else "",
-                self.prop_table_path,
-                self.fia_path,
-                str(lidar_data_path),
-                self.unit_name_edit.text(),
-                self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else "",
-                self.threads_edit.value(),
-            )
-        except Exception as exc:
-            message = f"{exc}\n\nDebugging Traceback:\n{traceback.format_exc()}"
-            self.notify_exception(message)
+        self.worker_thread = QThread()
+        self.worker = ProjectBuildWorker(
+            self.prj_name_edit.text(),
+            str(unit_poly_path),
+            str(reference_data_path) if reference_data_path is not None else "",
+            self.prop_table_path,
+            self.fia_path,
+            str(lidar_data_path),
+            self.unit_name_edit.text(),
+            self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else "",
+            self.threads_edit.value(),
+        )
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.started.connect(self.worker.run)
+        self.worker.progress_message.connect(self._append_progress)
+        self.worker.finished.connect(self._handle_worker_result)
+        self.worker.finished.connect(self.worker_thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        self.worker_thread.finished.connect(self._handle_worker_thread_finished)
+        self.worker_thread.start()
+
+    def start_gamingactivity(self, result: Any) -> None:
+        if not isinstance(result, dict):
+            self.notify_exception(str(result))
             return
-        finally:
-            self._restore_stdout()
-            self.start_button.setEnabled(True)
+
+        project_settings = result.get("project_settings")
+        project_area = result.get("project_area")
+        if not isinstance(project_settings, ProjectSettings) or not isinstance(project_area, ProjectArea):
+            self.notify_exception("Project build did not return a valid ProjectSettings and ProjectArea.")
+            return
 
         try:
             autosave_path = self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else None
             Activity.start_activity(
                 GamingActivity,
                 None,
-                {"ProjectSettings": project_settings, "Autosave_path": autosave_path},
+                {
+                    "ProjectSettings": project_settings,
+                    "ProjectArea": project_area,
+                    "Autosave_path": autosave_path,
+                },
                 WindowMode.Sibling,
             )
             self.stop()
         except Exception as exc:
-            message = f"{exc}\n\nDebugging Traceback:\n{traceback.format_exc()}"
+            message = "{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc())
             self.notify_exception(message)
 
     def save_changed(self, state: int) -> None:
         self.auto_save_line_edit.setEnabled(bool(state))
 
     def save_clicked(self, checked: bool = False) -> None:
+        del checked
         if self.save_file_location:
             save_path = Path(self.save_file_location)
             if save_path.is_file():
@@ -206,22 +248,65 @@ class ProjectSettingsActivity(Activity):
         self.save_as_clicked()
 
     def save_as_clicked(self, checked: bool = False) -> None:
+        del checked
         raise NotImplementedError("Save as functionality is not yet implemented.")
-        self.notify_save_success()
 
-    def _append_output(self, text: str) -> None:
-        if not text:
+    @Slot(str)
+    def _append_progress(self, text: str) -> None:
+        if not text or self._closed:
             return
-        if sys.__stdout__ is not None:
-            sys.__stdout__.write(text)
+        if self.text_output.toPlainText():
+            self.text_output.insertPlainText("\n")
         self.text_output.insertPlainText(text)
         self.text_output.ensureCursorVisible()
-        QApplication.processEvents()
 
-    @staticmethod
-    def _restore_stdout() -> None:
-        sys.stdout = sys.__stdout__
-        print("stdout restored")
+    @Slot(object)
+    def _handle_worker_result(self, result: Any) -> None:
+        self._pending_worker_result = result
+        self._worker_finished = True
+        if self.worker_thread is None or not self.worker_thread.isRunning():
+            self._finalize_worker_result()
+
+    @Slot()
+    def _handle_worker_thread_finished(self) -> None:
+        self._clear_worker_references()
+        if self._worker_finished:
+            self._finalize_worker_result()
+
+    def _finalize_worker_result(self) -> None:
+        self.start_button.setEnabled(True)
+        if self._closed:
+            return
+
+        result = self._pending_worker_result
+        self._pending_worker_result = None
+        self._worker_finished = False
+
+        if isinstance(result, dict):
+            self._append_progress("Project area ready.")
+            self.start_gamingactivity(result)
+            return
+
+        self.notify_exception(str(result))
+
+    @Slot()
+    def _clear_worker_references(self) -> None:
+        self.worker_thread = None
+        self.worker = None
+
+    def _shutdown_worker(self) -> None:
+        thread = self.worker_thread
+        if thread is None:
+            return
+        if thread.isRunning():
+            thread.quit()
+            thread.wait(5000)
+        self._clear_worker_references()
+
+    def _on_window_close(self, window: Any) -> None:
+        self._closed = True
+        self._shutdown_worker()
+        super()._on_window_close(window)
 
     @staticmethod
     def notify_save_success() -> None:
@@ -249,13 +334,62 @@ class ProjectSettingsActivity(Activity):
         msg.exec()
 
 
-class WriteStream:
-    def __init__(self, write_callback: Callable[[str], None]) -> None:
-        self.write_callback = write_callback
+class ProjectBuildWorker(QObject):
+    progress_message = Signal(str)
+    finished = Signal(object)
 
-    def write(self, text: str) -> None:
-        self.write_callback(text)
+    def __init__(
+        self,
+        prj_name: str,
+        unit: str,
+        ref: str,
+        prop_table: str,
+        fia: str,
+        lidar: str,
+        unit_name: str,
+        save_path: str,
+        threads: int,
+        *args: Any,
+        **kwargs: Any
+    ):
+        QObject.__init__(self, *args, **kwargs)
+        self.prj_name = prj_name
+        self.unit = unit
+        self.ref = ref
+        self.prop_table = prop_table
+        self.fia = fia
+        self.lidar = lidar
+        self.unit_name = unit_name
+        self.save_path = save_path
+        self.threads = threads
 
-    def flush(self) -> None:
-        pass
+    @Slot()
+    def run(self) -> None:
+        try:
+            project_settings = ProjectSettings(
+                self.prj_name,
+                self.unit,
+                self.ref,
+                self.prop_table,
+                self.fia,
+                self.lidar,
+                self.unit_name,
+                self.save_path,
+                self.threads,
+            )
 
+            def on_progress(event: Any) -> None:
+                message = getattr(event, "message", "")
+                if message:
+                    self.progress_message.emit(message)
+
+            project_area = build_project_area_with_progress(project_settings, on_progress)
+            self.finished.emit(
+                {
+                    "project_settings": project_settings,
+                    "project_area": project_area,
+                }
+            )
+        except Exception as exc:
+            message = "{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc())
+            self.finished.emit(message)

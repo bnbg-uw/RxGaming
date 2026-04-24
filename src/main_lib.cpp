@@ -1,11 +1,31 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
+#include <mutex>
 #include "projectSettings.hpp"
 #include "rxgProjectArea.hpp"
 #include "rxgTreatmentEngine.hpp"
 
 namespace py = pybind11;
+
+namespace {
+    rxgaming::RxGamingProjectArea build_project_area_with_progress(const rxgaming::ProjectSettings& ps, py::object callback) {
+        if (callback.is_none()) {
+            py::gil_scoped_release release;
+            return rxgaming::RxGamingProjectArea(ps);
+        }
+
+        std::mutex callbackMutex;
+        rxgaming::ProgressCallback progressCallback = [callback, &callbackMutex](const rxgaming::ProgressEvent& event) {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            py::gil_scoped_acquire gil;
+            callback(event);
+        };
+
+        py::gil_scoped_release release;
+        return rxgaming::RxGamingProjectArea(ps, progressCallback);
+    }
+}
 
 /*
     py::class_<ProjectSettings>(m, "ProjectSettings")
@@ -23,6 +43,12 @@ namespace py = pybind11;
 PYBIND11_MODULE(rxgaming_core, m) {
     m.def("set_proj_db_path", &rxgaming::set_proj_db_path, "Set the PROJ data directory path");
     m.def("set_seed", &rxgaming::set_seed, "Set the random seed");
+    m.def(
+        "build_project_area_with_progress",
+        &build_project_area_with_progress,
+        py::arg("ps"),
+        py::arg("callback") = py::none(),
+        "Build a ProjectArea while reporting structured progress events.");
     
     py::class_<rxtools::StructureSummary>(m, "StructureSummary")
         .def_readwrite("ba", &rxtools::StructureSummary::ba)
@@ -44,6 +70,14 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .value("diameterFailure", rxtools::treatmentResult::diameterFailure)
         .value("cuttingFailure", rxtools::treatmentResult::cuttingFailure);
 
+    py::class_<rxgaming::ProgressEvent>(m, "ProgressEvent")
+        .def_readonly("stage", &rxgaming::ProgressEvent::stage)
+        .def_readonly("message", &rxgaming::ProgressEvent::message)
+        .def_readonly("unitIndex", &rxgaming::ProgressEvent::unitIndex)
+        .def_readonly("unitName", &rxgaming::ProgressEvent::unitName)
+        .def_readonly("completed", &rxgaming::ProgressEvent::completed)
+        .def_readonly("total", &rxgaming::ProgressEvent::total);
+
     py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
         .def(py::init<std::string, std::string, std::string, std::string,
              std::string, std::string, std::string, std::string, int>(),
@@ -56,6 +90,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def_readonly("fiaPath", &rxgaming::ProjectSettings::fiaPath)
         .def_readonly("lidarPath", &rxgaming::ProjectSettings::lidarPath)
         .def_readonly("unitName", &rxgaming::ProjectSettings::unitName)
+        .def_readonly("savePath", &rxgaming::ProjectSettings::savePath)
         .def_readonly("nThread", &rxgaming::ProjectSettings::nThread);
     
     py::class_<rxgaming::RxGamingRxUnit>(m, "RxUnit")
@@ -90,6 +125,9 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def("do_treatment", &rxgaming::TreatmentEngine::do_treatment);
     
     py::class_<rxgaming::RxGamingProjectArea>(m, "ProjectArea")
-        .def(py::init<const rxgaming::ProjectSettings&>())
+        .def(py::init([](const rxgaming::ProjectSettings& ps) {
+            py::gil_scoped_release release;
+            return rxgaming::RxGamingProjectArea(ps);
+        }))
         .def_readwrite("rxUnits", &rxgaming::RxGamingProjectArea::rxUnits);
 }

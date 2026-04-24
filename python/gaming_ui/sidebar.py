@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListView,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -265,12 +266,13 @@ class UnitSidebar(QWidget):
         self.model = UnitListModel(rx_units, unit_system)
         self.unit_list_view = QListView()
         self.unit_list_view.setModel(self.model)
+        self.unit_list_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.structure_info = StructureInfo(unit_system)
         self.stand_controls = StandControls(unit_system)
 
         units_group = QGroupBox("UNITS")
         units_layout = QVBoxLayout()
-        units_layout.addWidget(self.unit_list_view)
+        units_layout.addWidget(self.unit_list_view, 1)
         units_group.setLayout(units_layout)
 
         structure_group = QGroupBox("Structure")
@@ -284,9 +286,8 @@ class UnitSidebar(QWidget):
         controls_group.setLayout(controls_layout)
 
         layout = QVBoxLayout()
-        layout.addWidget(units_group)
+        layout.addWidget(units_group, 1)
         layout.addWidget(structure_group)
-        layout.addStretch(1)
         layout.addWidget(controls_group)
         self.setMaximumWidth(290)
         self.setLayout(layout)

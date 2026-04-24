@@ -32,7 +32,7 @@ class GamingTabs(QTabWidget):
 
         self.stand_tab.set_state_changed_callback(self._handle_stand_state_change)
         self.stand_tab.set_landscape_invalidated_callback(self._invalidate_landscape_tab)
-        self.landscape_tab.set_unit_selected_callback(self.stand_tab.select_unit)
+        self.landscape_tab.set_unit_selected_callback(self._handle_landscape_unit_selected)
 
         self.addTab(self.stand_tab, "Stand View")
         self.addTab(self.landscape_tab, "Landscape View")
@@ -94,6 +94,10 @@ class GamingTabs(QTabWidget):
     def _on_tab_changed(self, index: int) -> None:
         if index == 1:
             self._refresh_landscape_if_needed(trigger="tab_changed")
+
+    def _handle_landscape_unit_selected(self, index: int) -> None:
+        self.stand_tab.select_unit(index)
+        self.setCurrentIndex(0)
 
     def _refresh_landscape_if_needed(self, *, force: bool = False, trigger: str) -> None:
         if not force:

@@ -26,8 +26,10 @@ class GamingActivity(Activity):
         self.window.setCentralWidget(self.central_widget)
 
         self.saved_state = saved_state
+        print("before load ps")
         self.project_settings = self._load_project_settings(saved_state)
-        self.project_area = ProjectArea(self.project_settings)
+        print("before load pa")
+        self.project_area = self._load_project_area(saved_state, self.project_settings)
         self.tab_widget = GamingTabs(self.project_settings, self.project_area, saved_state)
 
         layout = QVBoxLayout()
@@ -136,3 +138,13 @@ class GamingActivity(Activity):
         if isinstance(project_settings, dict):
             return ProjectSettings(**project_settings)
         raise TypeError("Saved ProjectSettings must be an rxgaming_core.ProjectSettings or a serialized settings dict.")
+
+    @staticmethod
+    def _load_project_area(saved_state: dict[str, Any], project_settings: ProjectSettings) -> ProjectArea:
+        print("in load project area")
+        project_area = saved_state.get("ProjectArea")
+        if isinstance(project_area, ProjectArea):
+            print("found project area")
+            return project_area
+        print("constructing project area")
+        return ProjectArea(project_settings)

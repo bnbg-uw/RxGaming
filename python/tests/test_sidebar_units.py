@@ -72,6 +72,23 @@ class TestSidebarUnits(unittest.TestCase):
 
         self.assertAlmostEqual(50.0 / units.FT2_PER_ACRE_PER_M2_PER_HA, unit.targetStructure.ba)
 
+    def test_target_cc_edit_is_converted_back_to_canonical_proportion(self) -> None:
+        widget = StructureInfo(units.UnitSystem.IMPERIAL)
+        unit = FakeUnit()
+        widget.update_for_unit(unit)
+
+        widget.target_cc.setText("65.00")
+        widget._apply_target_change(3)
+
+        self.assertAlmostEqual(0.65, unit.targetStructure.cc)
+
+    def test_current_cc_displays_as_percent(self) -> None:
+        widget = StructureInfo(units.UnitSystem.IMPERIAL)
+        unit = FakeUnit()
+        widget.update_for_unit(unit)
+
+        self.assertEqual("50.00", widget.current_cc.text())
+
 
 if __name__ == "__main__":
     unittest.main()

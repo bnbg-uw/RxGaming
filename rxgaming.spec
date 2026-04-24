@@ -12,6 +12,7 @@ from PyInstaller.utils.hooks import Tree
 ROOT = Path(SPECPATH).resolve().parent
 PYTHON_DIR = ROOT / "python"
 RESOURCES_DIR = ROOT / "resources"
+ICON_PATH = ROOT / "icons" / "Icon.ico"
 RELEASE_DIR = ROOT / "build" / "release" / "Release"
 TRIPLET = os.environ.get("VCPKG_TARGET_TRIPLET", "x64-windows")
 VCPKG_ROOT = Path(os.environ["VCPKG_ROOT"]) if "VCPKG_ROOT" in os.environ else None
@@ -73,6 +74,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(ICON_PATH) if ICON_PATH.exists() else None,
 )
 coll = COLLECT(
     exe,

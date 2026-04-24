@@ -9,6 +9,7 @@ METER_PER_INCH = 0.0254
 METER_PER_CENTIMETER = 0.01
 SQUARE_METER_PER_HECTARE = 10000.0
 SQUARE_METER_PER_ACRE = 4046.8564224
+PERCENT_PER_PROPORTION = 100.0
 
 CENTIMETERS_PER_INCH = METER_PER_INCH / METER_PER_CENTIMETER
 FEET_PER_METER = 1.0 / METER_PER_FOOT
@@ -83,7 +84,7 @@ def label_for(metric_kind: MetricKind, unit_system: UnitSystem) -> str:
     if metric_kind == "mcs":
         return "MCS"
     if metric_kind == "cc":
-        return "CC"
+        return "%"
     raise ValueError(f"Unknown metric kind: {metric_kind}")
 
 
@@ -114,8 +115,10 @@ def to_display(metric_kind: MetricKind, metric_value: float, unit_system: UnitSy
         return tph_to_display(metric_value, unit_system)
     if metric_kind == "ba":
         return ba_to_display(metric_value, unit_system)
-    if metric_kind in {"mcs", "cc"}:
+    if metric_kind == "mcs":
         return metric_value
+    if metric_kind == "cc":
+        return metric_value * PERCENT_PER_PROPORTION
     raise ValueError(f"Unknown metric kind: {metric_kind}")
 
 
@@ -128,8 +131,10 @@ def from_display(metric_kind: MetricKind, display_value: float, unit_system: Uni
         return tph_from_display(display_value, unit_system)
     if metric_kind == "ba":
         return ba_from_display(display_value, unit_system)
-    if metric_kind in {"mcs", "cc"}:
+    if metric_kind == "mcs":
         return display_value
+    if metric_kind == "cc":
+        return display_value / PERCENT_PER_PROPORTION
     raise ValueError(f"Unknown metric kind: {metric_kind}")
 
 
@@ -156,8 +161,10 @@ def array_to_display(metric_kind: MetricKind, values: Any, unit_system: UnitSyst
         factor = TPA_PER_TPH if unit_system == UnitSystem.IMPERIAL else 1.0
     elif metric_kind == "ba":
         factor = FT2_PER_ACRE_PER_M2_PER_HA if unit_system == UnitSystem.IMPERIAL else 1.0
-    elif metric_kind in {"mcs", "cc"}:
+    elif metric_kind == "mcs":
         factor = 1.0
+    elif metric_kind == "cc":
+        factor = PERCENT_PER_PROPORTION
     else:
         raise ValueError(f"Unknown metric kind: {metric_kind}")
     return values * factor

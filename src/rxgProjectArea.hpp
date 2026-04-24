@@ -12,17 +12,30 @@ rxgprojectarea.hpp
 */
 
 #pragma once
+#include <functional>
+#include <string>
 #include "projectSettings.hpp"
 #include "rxgRxUnit.hpp"
 #include "readProcessedFolder.hpp"
 
 namespace rxgaming {
 
+    struct ProgressEvent {
+        std::string stage;
+        std::string message;
+        int unitIndex = -1;
+        std::string unitName;
+        int completed = -1;
+        int total = -1;
+    };
+
+    using ProgressCallback = std::function<void(const ProgressEvent&)>;
+
     class RxGamingProjectArea {
     public:
         std::vector<RxGamingRxUnit> rxUnits;
         
-        RxGamingProjectArea(const ProjectSettings& ps);
+        RxGamingProjectArea(const ProjectSettings& ps, const ProgressCallback& progressCallback = ProgressCallback());
         
     };
 }

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import importlib.util
 import unittest
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 UNITS_PATH = ROOT / "python" / "gaming_ui" / "units.py"
@@ -39,6 +40,17 @@ class TestUnits(unittest.TestCase):
         display_value = units.ba_to_display(metric_value, units.UnitSystem.IMPERIAL)
         self.assertAlmostEqual(metric_value * units.FT2_PER_ACRE_PER_M2_PER_HA, display_value)
         self.assertAlmostEqual(metric_value, units.ba_from_display(display_value, units.UnitSystem.IMPERIAL))
+
+    def test_cc_round_trip(self) -> None:
+        metric_value = 0.32
+        display_value = units.to_display("cc", metric_value, units.UnitSystem.IMPERIAL)
+        self.assertAlmostEqual(32.0, display_value)
+        self.assertAlmostEqual(metric_value, units.from_display("cc", display_value, units.UnitSystem.IMPERIAL))
+
+    def test_cc_array_to_display_uses_percent_scale(self) -> None:
+        values = np.asarray([0.1, 0.25, 0.9], dtype=float)
+        display_values = units.array_to_display("cc", values, units.UnitSystem.METRIC)
+        self.assertEqual([10.0, 25.0, 90.0], list(display_values))
 
     def test_constants_match_unit_hpp(self) -> None:
         unit_hpp = ROOT / "src" / "lapisgis" / "src" / "Unit.hpp"
