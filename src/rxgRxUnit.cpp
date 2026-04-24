@@ -338,4 +338,8 @@ namespace rxgaming {
 
         return thisBasin;
     }
+
+    void RxGamingRxUnit::refresh_derived_state() {
+        hillshade = computeHillshade(chm);
+    }
 }

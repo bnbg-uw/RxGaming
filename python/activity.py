@@ -16,7 +16,6 @@ persistent state information.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-import pickle
 from pathlib import Path
 from typing import Any, ClassVar, Mapping
 
@@ -334,20 +333,51 @@ class SaveStateActivity(Activity):
         self.stop()
 
     def prompt_and_save(self, saved_state: Mapping[str, Any]) -> None:
-        file_path = QFileDialog.getSaveFileName(None, "Save as...", "", "*.dat")[0]
+        has_project_snapshot = "ProjectArea" in saved_state and "ProjectSettings" in saved_state
+        default_name = "project.json" if has_project_snapshot else "settings.json"
+        file_path = QFileDialog.getSaveFileName(
+            None,
+            "Save as...",
+            str(Path.cwd() / default_name),
+            "RxGaming JSON files (*.json)",
+        )[0]
         if file_path == "":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
                 "Choose a file",
-                "Please select a file (.dat) to save your work",
+                "Please select a JSON file to save your work",
             )
             return
         self.write_file(file_path, saved_state)
 
     @staticmethod
     def write_file(file_path: str | Path, saved_state: Mapping[str, Any]) -> None:
-        with Path(file_path).open("wb") as fp:
-            pickle.dump(dict(saved_state), fp)
+        from persistence import write_project_settings_file, write_project_snapshot
+
+        path = Path(file_path)
+        if "ProjectArea" in saved_state and "ProjectSettings" in saved_state:
+            project_settings = saved_state["ProjectSettings"]
+            project_area = saved_state["ProjectArea"]
+            if not isinstance(project_settings, object) or not isinstance(project_area, object):
+                raise TypeError("Saved project state is missing native project objects.")
+            session_state = saved_state.get("SessionState", {})
+            form_state = saved_state.get("ProjectSettingsForm")
+            write_project_snapshot(
+                path,
+                app_version=Activity.version,
+                project_settings=project_settings,
+                project_area=project_area,
+                session_state=session_state if isinstance(session_state, Mapping) else {},
+                form_state=form_state if isinstance(form_state, Mapping) else None,
+            )
+            return
+
+        form_state = saved_state.get("ProjectSettingsForm")
+        if isinstance(form_state, Mapping):
+            write_project_settings_file(path, form_state, app_version=Activity.version)
+            return
+
+        raise ValueError("No saveable project settings or project snapshot data were available.")
 
     def no_clicked(self, checked: bool = False) -> None:
         self.stop()
@@ -404,17 +434,56 @@ class LoadStateActivity(Activity):
         return {}
     
     def load_clicked(self, checked: bool = False) -> None:
-        file_path = QFileDialog.getOpenFileName(self.window, "Open...", "", "*.dat")[0]
+        file_path = QFileDialog.getOpenFileName(
+            self.window,
+            "Open...",
+            "",
+            "JSON files (*.json)",
+        )[0]
         if file_path == "":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
                 "Choose a file",
-                "Please select a file (.dat) to open",
+                "Please select a project.json or settings.json file to open",
             )
             return
-        with Path(file_path).open("rb") as fp:
-            saved_state = pickle.load(fp)
-            saved_state['save_file_location'] = file_path
+        path = Path(file_path)
+        if path.suffix.lower() != ".json":
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Unsupported file",
+                "Legacy .dat pickle files are no longer supported. Please choose a settings.json or project.json file.",
+            )
+            return
+
+        from persistence import read_project_settings_file, read_project_snapshot
+
+        try:
+            if path.name == "settings.json":
+                loaded = read_project_settings_file(path)
+                saved_state = {
+                    "ProjectSettingsForm": loaded.form_state,
+                    "save_file_location": str(loaded.settings_path),
+                }
+            elif path.name == "project.json":
+                loaded = read_project_snapshot(path)
+                saved_state = {
+                    "ProjectSettings": loaded.project_settings,
+                    "ProjectArea": loaded.project_area,
+                    "ProjectSettingsForm": loaded.form_state,
+                    "ProjectSnapshotPath": str(loaded.manifest_path),
+                    "SessionState": loaded.session_state,
+                }
+            else:
+                raise ValueError("Please choose either settings.json or project.json.")
+        except Exception as exc:
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Open failed",
+                str(exc),
+            )
+            return
+
         Activity._saved_state = saved_state
         if self.on_load is not None:
             self.on_load(saved_state)

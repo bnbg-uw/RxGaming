@@ -35,7 +35,9 @@ namespace rxgaming {
     public:
         std::vector<RxGamingRxUnit> rxUnits;
         
+        RxGamingProjectArea() = default;
         RxGamingProjectArea(const ProjectSettings& ps, const ProgressCallback& progressCallback = ProgressCallback());
+        explicit RxGamingProjectArea(std::vector<RxGamingRxUnit> units);
         
     };
 }

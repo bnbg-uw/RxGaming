@@ -4,6 +4,7 @@ Gaming activity UI shell.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtGui import QAction
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 from activity import Activity
 from gaming_export import export_current_view, export_features, export_raster, export_treelist
 from gaming_ui import GamingTabs
+from persistence import ProjectSnapshotSessionPersistence
 from rxgaming_core import ProjectArea, ProjectSettings
 from widgets import QMainWindowRx
 
@@ -26,11 +28,23 @@ class GamingActivity(Activity):
         self.window.setCentralWidget(self.central_widget)
 
         self.saved_state = saved_state
-        print("before load ps")
+        print("a")
+        self.project_settings_form = saved_state.get("ProjectSettingsForm")
+        print("b")
+        self.project_snapshot_path = saved_state.get("ProjectSnapshotPath")
+        print("c")
         self.project_settings = self._load_project_settings(saved_state)
-        print("before load pa")
+        print("d")
         self.project_area = self._load_project_area(saved_state, self.project_settings)
-        self.tab_widget = GamingTabs(self.project_settings, self.project_area, saved_state)
+        print("e")
+        self._persistence = self._build_persistence()
+        print("f")
+        self.tab_widget = GamingTabs(
+            self.project_settings,
+            self.project_area,
+            saved_state,
+            persistence=self._persistence,
+        )
 
         layout = QVBoxLayout()
         layout.addWidget(self.tab_widget)
@@ -44,14 +58,56 @@ class GamingActivity(Activity):
         self._create_actions()
         self._create_menu()
 
+        if self._persistence is not None and self.project_snapshot_path is not None:
+            self._persistence.initialize_snapshot(self.tab_widget.session_state)
+
     def save(self) -> dict[str, Any]:
         return {
-            "ProjectSettings": self._serialize_project_settings(self.project_settings),
+            "ProjectSettings": self.project_settings,
+            "ProjectArea": self.project_area,
+            "ProjectSettingsForm": self.project_settings_form,
+            "ProjectSnapshotPath": self.project_snapshot_path,
+            "SessionState": self.tab_widget.session_state.to_dict(),
             "LastActivity": type(self),
         }
 
     def menu_exit(self) -> None:
         self.stop()
+
+    def save_project(self) -> None:
+        if self._persistence is None:
+            self.save_project_as()
+            return
+        try:
+            self._persistence.save_full_project(self.tab_widget.session_state)
+            self._notify_save_success("Project saved successfully.")
+        except Exception as exc:
+            self._notify_save_failure(str(exc))
+
+    def save_project_as(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        selected_path = QFileDialog.getSaveFileName(
+            self.window,
+            "Save project snapshot as...",
+            str(self._default_project_manifest_path()),
+            "JSON files (*.json)",
+        )[0]
+        if selected_path == "":
+            return
+
+        selected_manifest = Path(selected_path)
+        self.project_snapshot_path = str(selected_manifest)
+        self._persistence = self._build_persistence()
+        if self._persistence is None:
+            self._notify_save_failure("Could not create a project persistence target.")
+            return
+
+        try:
+            self._persistence.save_full_project(self.tab_widget.session_state)
+            self._notify_save_success("Project saved successfully.")
+        except Exception as exc:
+            self._notify_save_failure(str(exc))
 
     def export_tif(self) -> None:
         export_current_view(self.tab_widget, self.window)
@@ -84,6 +140,13 @@ class GamingActivity(Activity):
         msg.exec()
 
     def _create_actions(self) -> None:
+        self.save_action = QAction("&Save Project", self.window)
+        self.save_action.setShortcut("Ctrl+S")
+        self.save_action.triggered.connect(self.save_project)
+
+        self.save_as_action = QAction("Save Project &As", self.window)
+        self.save_as_action.triggered.connect(self.save_project_as)
+
         self.exit_action = QAction("&Exit", self.window)
         self.exit_action.setShortcut("Ctrl+Q")
         self.exit_action.triggered.connect(self.menu_exit)
@@ -109,6 +172,8 @@ class GamingActivity(Activity):
         export_menu = file_menu.addMenu("Export")
 
         file_menu.addAction(self.license_action)
+        file_menu.addAction(self.save_action)
+        file_menu.addAction(self.save_as_action)
         file_menu.addAction(self.exit_action)
 
         export_menu.addAction(self.export_rasters_action)
@@ -141,10 +206,45 @@ class GamingActivity(Activity):
 
     @staticmethod
     def _load_project_area(saved_state: dict[str, Any], project_settings: ProjectSettings) -> ProjectArea:
-        print("in load project area")
         project_area = saved_state.get("ProjectArea")
         if isinstance(project_area, ProjectArea):
-            print("found project area")
             return project_area
-        print("constructing project area")
         return ProjectArea(project_settings)
+
+    def _build_persistence(self) -> ProjectSnapshotSessionPersistence | None:
+        if not self.project_snapshot_path:
+            return None
+        return ProjectSnapshotSessionPersistence(
+            self.project_snapshot_path,
+            app_version=Activity.version,
+            project_settings=self.project_settings,
+            project_area=self.project_area,
+            form_state=self.project_settings_form if isinstance(self.project_settings_form, dict) else None,
+        )
+
+    def _default_project_manifest_path(self) -> Path:
+        if self.project_snapshot_path:
+            return Path(self.project_snapshot_path)
+        save_path = getattr(self.project_settings, "savePath", "")
+        if save_path:
+            return Path(save_path)
+        return Path.cwd() / "project.json"
+
+    @staticmethod
+    def _notify_save_success(text: str) -> None:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(text)
+        msg.setWindowTitle("Save successful")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
+    @staticmethod
+    def _notify_save_failure(text: str) -> None:
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setText("Saving the project failed.")
+        msg.setInformativeText(text)
+        msg.setWindowTitle("Save failed")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()

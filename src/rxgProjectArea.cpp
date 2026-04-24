@@ -18,6 +18,7 @@ rxgprojectarea.cpp
 #include <stdexcept>
 
 namespace rxgaming {
+    RxGamingProjectArea::RxGamingProjectArea(std::vector<RxGamingRxUnit> units) : rxUnits(std::move(units)) {}
 
     namespace {
         void emit_progress(

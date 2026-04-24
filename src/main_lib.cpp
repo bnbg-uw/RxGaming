@@ -4,6 +4,7 @@
 #include <mutex>
 #include "projectSettings.hpp"
 #include "rxgProjectArea.hpp"
+#include "rxgSnapshot.hpp"
 #include "rxgTreatmentEngine.hpp"
 
 namespace py = pybind11;
@@ -27,19 +28,6 @@ namespace {
     }
 }
 
-/*
-    py::class_<ProjectSettings>(m, "ProjectSettings")
-        .def(py::init<std::string, std::string, std::string,
-                      std::string, std::string, int>())
-        .def("get_name", &ProjectSettings::getName)
-        .def("get_units", &ProjectSettings::getUnits)
-        .def("save", &ProjectSettings::save)
-        .def("is_cache_valid", &ProjectSettings::isCacheValid)
-        .def("load_from_cache", &ProjectSettings::loadCache)
-        .def("recompute_and_cache", &ProjectSettings::recomputeAndCache)
-        .def("get_mcs_prop", &ProjectSettings::getMcsProp);
-        */
-
 PYBIND11_MODULE(rxgaming_core, m) {
     m.def("set_proj_db_path", &rxgaming::set_proj_db_path, "Set the PROJ data directory path");
     m.def("set_seed", &rxgaming::set_seed, "Set the random seed");
@@ -49,6 +37,17 @@ PYBIND11_MODULE(rxgaming_core, m) {
         py::arg("ps"),
         py::arg("callback") = py::none(),
         "Build a ProjectArea while reporting structured progress events.");
+    m.def(
+        "save_project_area",
+        &rxgaming::save_project_area,
+        py::arg("projectArea"),
+        py::arg("path"),
+        "Save a fully self-contained ProjectArea snapshot.");
+    m.def(
+        "load_project_area",
+        &rxgaming::load_project_area,
+        py::arg("path"),
+        "Load a ProjectArea snapshot without requiring source lidar data.");
     
     py::class_<rxtools::StructureSummary>(m, "StructureSummary")
         .def_readwrite("ba", &rxtools::StructureSummary::ba)
@@ -125,6 +124,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def("do_treatment", &rxgaming::TreatmentEngine::do_treatment);
     
     py::class_<rxgaming::RxGamingProjectArea>(m, "ProjectArea")
+        .def(py::init<>())
         .def(py::init([](const rxgaming::ProjectSettings& ps) {
             py::gil_scoped_release release;
             return rxgaming::RxGamingProjectArea(ps);

@@ -40,6 +40,10 @@ class GamingTabs(QTabWidget):
         self._handle_stand_state_change("initial_load")
 
     @property
+    def session_state(self):
+        return self._state
+
+    @property
     def raster_figure(self) -> Figure:
         return self.stand_tab.visualize_tab.raster_figure
 
@@ -85,7 +89,7 @@ class GamingTabs(QTabWidget):
 
     def _handle_stand_state_change(self, reason: str) -> None:
         self._refresh_landscape_if_needed(trigger=reason)
-        self._persistence.save_session(self._state)
+        self._persistence.save_session(self._state, reason)
 
     def _invalidate_landscape_tab(self) -> None:
         self._landscape_dirty = True

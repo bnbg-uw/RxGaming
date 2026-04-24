@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
+
 # These constants intentionally mirror the values in src/lapisgis/src/Unit.hpp.
 METER_PER_FOOT = 0.3048
 METER_PER_INCH = 0.0254

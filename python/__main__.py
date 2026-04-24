@@ -128,6 +128,14 @@ class AppContext:
         Activity.start_activity(self._to_start, **kwargs)
 
     def on_load(self, saved_state: dict[str, Any]) -> None:
+        if "ProjectArea" in saved_state:
+            from gamingactivity import GamingActivity
+
+            self._to_start = GamingActivity
+            return
+        if "ProjectSettingsForm" in saved_state:
+            self._to_start = ProjectSettingsActivity
+            return
         if "LastActivity" in saved_state:
             self._to_start = saved_state["LastActivity"]
 

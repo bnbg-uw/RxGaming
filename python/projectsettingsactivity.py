@@ -15,7 +15,6 @@ Handles user input and hands it off to ``ProjectSettings`` for processing.
 from __future__ import annotations
 
 from pathlib import Path
-import pickle
 import traceback
 from typing import Any, Optional
 
@@ -34,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from activity import Activity, SavedState, WindowMode
 from gamingactivity import GamingActivity
+from persistence import build_form_state, write_project_settings_file
 from rxgaming_core import ProjectArea, ProjectSettings
 from widgets import QFileSelectionLineEdit
 
@@ -69,7 +69,7 @@ class ProjectSettingsActivity(Activity):
         self.threads_edit = QSpinBox()
         self.threads_edit.setMinimum(1)
         self.auto_save_checkbox = QCheckBox()
-        self.auto_save_line_edit = QFileSelectionLineEdit(filter="*.dat", new_file=True)
+        self.auto_save_line_edit = QFileSelectionLineEdit(filter="JSON files (*.json)", new_file=True)
         self.auto_save_line_edit.setEnabled(False)
 
         form_layout = QFormLayout()
@@ -106,58 +106,36 @@ class ProjectSettingsActivity(Activity):
         self.save_button.clicked.connect(self.save_clicked)
         self.save_as_button.clicked.connect(self.save_as_clicked)
 
-        value = saved_state.get("ProjectSettingsActivity.prj_name")
-        if value is not None:
-            self.prj_name_edit.setText(value)
-        value = saved_state.get("ProjectSettingsActivity.unit_poly_path")
-        if value is not None:
-            self.unit_poly_path_edit.set_text(value)
-        value = saved_state.get("ProjectSettingsActivity.reference_data_path")
-        if value is not None:
-            self.reference_data_path_edit.set_text(value)
-        value = saved_state.get("ProjectSettingsActivity.lidar_data_path")
-        if value is not None:
-            self.lidar_data_path_edit.set_text(value)
-        value = saved_state.get("ProjectSettingsActivity.unit_name")
-        if value is not None:
-            self.unit_name_edit.setText(value)
-        value = saved_state.get("ProjectSettingsActivity.threads")
-        if value is not None:
-            self.threads_edit.setValue(value)
-        value = saved_state.get("ProjectSettingsActivity.auto_save")
-        if value is not None:
-            self.auto_save_checkbox.setChecked(value)
-        value = saved_state.get("ProjectSettingsActivity.auto_save_line")
-        if value is not None:
-            self.auto_save_line_edit.set_text(value)
+        form_state = saved_state.get("ProjectSettingsForm")
+        if isinstance(form_state, dict):
+            self._apply_form_state(form_state)
         value = saved_state.get("save_file_location")
         if value is not None:
             self.save_file_location = value
 
     def save(self) -> SavedState:
         return {
-            "ProjectSettingsActivity.prj_name": self.prj_name_edit.text(),
-            "ProjectSettingsActivity.unit_poly_path": self.unit_poly_path_edit.text(),
-            "ProjectSettingsActivity.reference_data_path": self.reference_data_path_edit.text(),
-            "ProjectSettingsActivity.lidar_data_path": self.lidar_data_path_edit.text(),
-            "ProjectSettingsActivity.unit_name": self.unit_name_edit.text(),
-            "ProjectSettingsActivity.threads": self.threads_edit.value(),
-            "ProjectSettingsActivity.auto_save": self.auto_save_checkbox.isChecked(),
-            "ProjectSettingsActivity.auto_save_line": self.auto_save_line_edit.text(),
+            "ProjectSettingsForm": self._collect_form_state(),
+            "save_file_location": self.save_file_location,
         }
 
     def start_clicked(self, checked: bool = False) -> None:
         del checked
 
-        auto_save_path = Path(self.auto_save_line_edit.text()) if self.auto_save_checkbox.isChecked() else None
+        auto_save_text = self.auto_save_line_edit.text().strip()
+        auto_save_path = Path(auto_save_text) if self.auto_save_checkbox.isChecked() else None
         unit_poly_path = Path(self.unit_poly_path_edit.text())
         lidar_data_path = Path(self.lidar_data_path_edit.text())
         reference_text = self.reference_data_path_edit.text()
         reference_data_path = Path(reference_text) if reference_text else None
 
-        if auto_save_path is not None and not auto_save_path.parent.exists():
-            self.notify_exception("The Auto-Save file path does not exist. Enter a valid file path before continuing.")
-            return
+        if auto_save_path is not None:
+            if auto_save_text == "":
+                self.notify_exception("Enter a project save path before enabling Auto-Save.")
+                return
+            if not auto_save_path.parent.exists():
+                self.notify_exception("The Auto-Save file path does not exist. Enter a valid file path before continuing.")
+                return
 
         if not unit_poly_path.exists():
             self.notify_exception("The unit polygon file path does not exist. Enter a valid file path before continuing.")
@@ -224,7 +202,9 @@ class ProjectSettingsActivity(Activity):
                 {
                     "ProjectSettings": project_settings,
                     "ProjectArea": project_area,
-                    "Autosave_path": autosave_path,
+                    "ProjectSettingsForm": self._collect_form_state(),
+                    "ProjectSnapshotPath": autosave_path,
+                    "SessionState": {},
                 },
                 WindowMode.Sibling,
             )
@@ -240,16 +220,29 @@ class ProjectSettingsActivity(Activity):
         del checked
         if self.save_file_location:
             save_path = Path(self.save_file_location)
-            if save_path.is_file():
-                with save_path.open("wb") as fp:
-                    pickle.dump(self.save(), fp)
-                self.notify_save_success()
+            if save_path.parent.exists():
+                write_project_settings_file(save_path, self._collect_form_state(), app_version=Activity.version)
+                self.notify_save_success("Settings saved successfully.")
                 return
         self.save_as_clicked()
 
     def save_as_clicked(self, checked: bool = False) -> None:
         del checked
-        raise NotImplementedError("Save as functionality is not yet implemented.")
+        from PySide6.QtWidgets import QFileDialog
+
+        selected_path = QFileDialog.getSaveFileName(
+            self.window,
+            "Save settings as...",
+            str(self._default_settings_path()),
+            "JSON files (*.json)",
+        )[0]
+        if selected_path == "":
+            return
+
+        save_path = Path(selected_path)
+        write_project_settings_file(save_path, self._collect_form_state(), app_version=Activity.version)
+        self.save_file_location = str(save_path)
+        self.notify_save_success("Settings saved successfully.")
 
     @Slot(str)
     def _append_progress(self, text: str) -> None:
@@ -309,10 +302,10 @@ class ProjectSettingsActivity(Activity):
         super()._on_window_close(window)
 
     @staticmethod
-    def notify_save_success() -> None:
+    def notify_save_success(text: str) -> None:
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Icon.Information)
-        msg.setText("Save Successful!")
+        msg.setText(text)
         msg.setWindowTitle("Result")
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()
@@ -332,6 +325,33 @@ class ProjectSettingsActivity(Activity):
         msg.setWindowTitle("Parameter error")
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()
+
+    def _collect_form_state(self) -> dict[str, Any]:
+        return build_form_state(
+            project_name=self.prj_name_edit.text(),
+            unit_poly_path=self.unit_poly_path_edit.text(),
+            reference_data_path=self.reference_data_path_edit.text(),
+            lidar_data_path=self.lidar_data_path_edit.text(),
+            unit_name=self.unit_name_edit.text(),
+            threads=self.threads_edit.value(),
+            auto_save_enabled=self.auto_save_checkbox.isChecked(),
+            auto_save_path=self.auto_save_line_edit.text(),
+        )
+
+    def _apply_form_state(self, form_state: dict[str, Any]) -> None:
+        self.prj_name_edit.setText(str(form_state.get("project_name", "")))
+        self.unit_poly_path_edit.set_text(str(form_state.get("unit_poly_path", "")))
+        self.reference_data_path_edit.set_text(str(form_state.get("reference_data_path", "")))
+        self.lidar_data_path_edit.set_text(str(form_state.get("lidar_data_path", "")))
+        self.unit_name_edit.setText(str(form_state.get("unit_name", "")))
+        self.threads_edit.setValue(int(form_state.get("threads", 1)))
+        self.auto_save_checkbox.setChecked(bool(form_state.get("auto_save_enabled", False)))
+        self.auto_save_line_edit.set_text(str(form_state.get("auto_save_path", "")))
+
+    def _default_settings_path(self) -> Path:
+        if self.save_file_location:
+            return Path(self.save_file_location)
+        return Path.cwd() / "settings.json"
 
 
 class ProjectBuildWorker(QObject):

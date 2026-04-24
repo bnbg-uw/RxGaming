@@ -51,6 +51,7 @@ namespace rxgaming {
         py::array_t<double> get_cut_taos() const;
 
         std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
+        void refresh_derived_state();
 
     private:
         template <class T>
