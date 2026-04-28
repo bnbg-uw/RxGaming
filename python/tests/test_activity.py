@@ -198,14 +198,16 @@ class TestLoadStateActivity(unittest.TestCase):
     def setUp(self) -> None:
         activity_module.Activity._activities = []
         activity_module.Activity._saved_state = {}
-        self.original_choose_load_target = activity_module.LoadStateActivity._choose_load_target
         self.original_show_message = activity_module.Activity._show_message
+        self.original_get_existing_directory = activity_module.QFileDialog.getExistingDirectory
+        self.original_get_open_file_name = activity_module.QFileDialog.getOpenFileName
         self.original_read_project_settings_file = persistence_module.read_project_settings_file
         self.original_read_project_snapshot = persistence_module.read_project_snapshot
 
     def tearDown(self) -> None:
-        activity_module.LoadStateActivity._choose_load_target = self.original_choose_load_target
         activity_module.Activity._show_message = self.original_show_message
+        activity_module.QFileDialog.getExistingDirectory = self.original_get_existing_directory
+        activity_module.QFileDialog.getOpenFileName = self.original_get_open_file_name
         persistence_module.read_project_settings_file = self.original_read_project_settings_file
         persistence_module.read_project_snapshot = self.original_read_project_snapshot
         for current in list(activity_module.Activity._activities):
@@ -213,28 +215,31 @@ class TestLoadStateActivity(unittest.TestCase):
         activity_module.Activity._activities = []
         activity_module.Activity._saved_state = {}
 
-    def test_load_clicked_loads_descriptive_settings_json(self) -> None:
+    def test_load_settings_clicked_loads_descriptive_settings_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = Path(tmpdir) / "dry-creek-template.json"
             settings_path.write_text("{}", encoding="utf-8")
-            activity_module.LoadStateActivity._choose_load_target = staticmethod(lambda parent: str(settings_path))
+            activity_module.QFileDialog.getOpenFileName = staticmethod(
+                lambda *args, **kwargs: (str(settings_path), "JSON files (*.json)")
+            )
             persistence_module.read_project_settings_file = lambda path: SimpleNamespace(
                 settings_path=Path(path),
                 form_state={"project_name": "Demo"},
             )
 
             activity = self._make_activity()
-            activity.load_clicked()
+            activity.load_settings_clicked()
             self.app.processEvents()
 
             self.assertEqual({"project_name": "Demo"}, activity_module.Activity._saved_state["ProjectSettingsForm"])
             self.assertEqual(str(settings_path), activity_module.Activity._saved_state["save_file_location"])
+            self.assertTrue(activity_module.Activity._saved_state["LoadStateContinue"])
 
-    def test_load_clicked_loads_project_folder(self) -> None:
+    def test_load_project_clicked_loads_project_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir) / "demo-project"
             project_root.mkdir()
-            activity_module.LoadStateActivity._choose_load_target = staticmethod(lambda parent: str(project_root))
+            activity_module.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
             persistence_module.read_project_snapshot = lambda path: SimpleNamespace(
                 project_root=Path(path),
                 project_settings={"name": "Demo"},
@@ -244,27 +249,47 @@ class TestLoadStateActivity(unittest.TestCase):
             )
 
             activity = self._make_activity()
-            activity.load_clicked()
+            activity.load_project_clicked()
             self.app.processEvents()
 
             self.assertEqual(str(project_root), activity_module.Activity._saved_state["ProjectSnapshotPath"])
             self.assertEqual({"active_page": 1}, activity_module.Activity._saved_state["SessionState"])
+            self.assertTrue(activity_module.Activity._saved_state["LoadStateContinue"])
 
-    def test_load_clicked_rejects_unsupported_file_type(self) -> None:
+    def test_load_settings_clicked_rejects_unsupported_file_type(self) -> None:
         messages: list[tuple[str, str]] = []
         with tempfile.TemporaryDirectory() as tmpdir:
             bad_path = Path(tmpdir) / "legacy.dat"
             bad_path.write_text("", encoding="utf-8")
-            activity_module.LoadStateActivity._choose_load_target = staticmethod(lambda parent: str(bad_path))
+            activity_module.QFileDialog.getOpenFileName = staticmethod(
+                lambda *args, **kwargs: (str(bad_path), "All files (*)")
+            )
             activity_module.Activity._show_message = staticmethod(
                 lambda icon, title, text, informative_text=None: messages.append((title, text))
             )
 
             activity = self._make_activity()
-            activity.load_clicked()
+            activity.load_settings_clicked()
             self.app.processEvents()
 
             self.assertEqual([("Unsupported file", "Please choose a settings JSON file or a project folder.")], messages)
+            self.assertFalse(activity_module.Activity._saved_state)
+
+    def test_new_clicked_marks_startup_to_continue(self) -> None:
+        activity = self._make_activity()
+
+        activity.new_clicked()
+        self.app.processEvents()
+
+        self.assertTrue(activity_module.Activity._saved_state["LoadStateContinue"])
+
+    def test_window_close_marks_startup_cancelled(self) -> None:
+        activity = self._make_activity()
+
+        activity.window.close()
+        self.app.processEvents()
+
+        self.assertFalse(activity_module.Activity._saved_state["LoadStateContinue"])
 
     def _make_activity(self) -> activity_module.LoadStateActivity:
         activity = activity_module.LoadStateActivity(None, activity_module.WindowMode.SimultaneousParent)

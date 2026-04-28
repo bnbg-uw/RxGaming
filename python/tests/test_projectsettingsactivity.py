@@ -340,6 +340,7 @@ class TestGamingActivity(unittest.TestCase):
         self.original_persistence = gamingactivity_module.ProjectSnapshotSessionPersistence
         self.original_notify_success = gamingactivity_module.GamingActivity._notify_save_success
         self.original_notify_failure = gamingactivity_module.GamingActivity._notify_save_failure
+        self.original_question = qt_widgets.QMessageBox.question
 
     def tearDown(self) -> None:
         gamingactivity_module.ProjectSettings = self.original_project_settings
@@ -348,6 +349,7 @@ class TestGamingActivity(unittest.TestCase):
         gamingactivity_module.ProjectSnapshotSessionPersistence = self.original_persistence
         gamingactivity_module.GamingActivity._notify_save_success = self.original_notify_success
         gamingactivity_module.GamingActivity._notify_save_failure = self.original_notify_failure
+        qt_widgets.QMessageBox.question = self.original_question
         for widget in self.app.topLevelWidgets():
             widget.close()
 
@@ -420,5 +422,85 @@ class TestGamingActivity(unittest.TestCase):
 
                 self.assertEqual([str(project_root), str(project_root)], save_calls)
                 self.assertEqual(str(project_root), activity.project_snapshot_path)
+            finally:
+                qt_widgets.QFileDialog.getExistingDirectory = original_get_existing_directory
+
+    def test_save_project_as_warns_before_overwriting_existing_project_folder(self) -> None:
+        class FakeProjectSettings:
+            def __init__(self) -> None:
+                self.name = "Demo"
+                self.unitPolyPath = "units.shp"
+                self.refDataPath = ""
+                self.mcsPropPath = "props.csv"
+                self.fiaPath = "fia.csv"
+                self.lidarPath = "lidar"
+                self.unitName = "NAME"
+                self.savePath = ""
+                self.nThread = 2
+
+        class FakeProjectArea:
+            pass
+
+        class FakeSessionState:
+            def to_dict(self) -> dict[str, object]:
+                return {"active_page": 1}
+
+        class FakeTabs(projectsettingsactivity_module.QTextBrowser):
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                super().__init__()
+                self.session_state = FakeSessionState()
+
+        save_calls: list[str] = []
+        question_calls: list[str] = []
+
+        class FakePersistence:
+            def __init__(self, project_root: str, **kwargs: object) -> None:
+                self.project_root = project_root
+
+            def initialize_snapshot(self, state: object) -> None:
+                del state
+
+            def save_full_project(self, state: object) -> Path:
+                del state
+                save_calls.append(self.project_root)
+                return Path(self.project_root)
+
+        gamingactivity_module.ProjectSettings = FakeProjectSettings
+        gamingactivity_module.ProjectArea = FakeProjectArea
+        gamingactivity_module.GamingTabs = FakeTabs
+        gamingactivity_module.ProjectSnapshotSessionPersistence = FakePersistence
+        gamingactivity_module.GamingActivity._notify_save_success = staticmethod(lambda text: None)
+        gamingactivity_module.GamingActivity._notify_save_failure = staticmethod(lambda text: self.fail(text))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir) / "saved-project"
+            project_root.mkdir()
+            (project_root / "project.json").write_text("{}", encoding="utf-8")
+
+            original_get_existing_directory = qt_widgets.QFileDialog.getExistingDirectory
+            qt_widgets.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
+            try:
+                activity = gamingactivity_module.GamingActivity(None, gamingactivity_module.WindowMode.SimultaneousParent)
+                activity.on_start(
+                    {
+                        "ProjectSettings": FakeProjectSettings(),
+                        "ProjectArea": FakeProjectArea(),
+                        "ProjectSettingsForm": {"project_name": "Demo"},
+                        "SessionState": {},
+                    }
+                )
+
+                qt_widgets.QMessageBox.question = staticmethod(
+                    lambda *args, **kwargs: question_calls.append(str(project_root)) or qt_widgets.QMessageBox.StandardButton.No
+                )
+                activity.save_project_as()
+                self.assertEqual([str(project_root)], question_calls)
+                self.assertEqual([], save_calls)
+
+                qt_widgets.QMessageBox.question = staticmethod(
+                    lambda *args, **kwargs: qt_widgets.QMessageBox.StandardButton.Yes
+                )
+                activity.save_project_as()
+                self.assertEqual([str(project_root)], save_calls)
             finally:
                 qt_widgets.QFileDialog.getExistingDirectory = original_get_existing_directory

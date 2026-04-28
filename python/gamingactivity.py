@@ -90,6 +90,8 @@ class GamingActivity(Activity):
             return
 
         selected_root = Path(selected_path)
+        if self._project_root_has_existing_save(selected_root) and not self._confirm_overwrite_project(selected_root):
+            return
         self.project_snapshot_path = str(selected_root)
         self._persistence = self._build_persistence()
         if self._persistence is None:
@@ -222,6 +224,29 @@ class GamingActivity(Activity):
         if save_path:
             return Path(save_path)
         return Path.cwd()
+
+    @staticmethod
+    def _project_root_has_existing_save(project_root: Path) -> bool:
+        canonical_files = (
+            project_root / "project.json",
+            project_root / "settings.json",
+            project_root / "session.json",
+            project_root / "projectarea.h5",
+        )
+        return any(path.exists() for path in canonical_files)
+
+    def _confirm_overwrite_project(self, project_root: Path) -> bool:
+        result = QMessageBox.question(
+            self.window,
+            "Overwrite existing project?",
+            (
+                "This folder already contains a saved project.\n\n"
+                f"Saving here will overwrite project files in:\n{project_root}"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return result == QMessageBox.StandardButton.Yes
 
     @staticmethod
     def _notify_save_success(text: str) -> None:

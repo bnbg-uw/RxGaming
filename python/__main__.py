@@ -124,6 +124,8 @@ class AppContext:
 
     def run(self, **kwargs: Any) -> None:
         Activity.start_activity(LoadStateActivity, saved_state={"onLoad": self.on_load})
+        if not Activity._saved_state.get("LoadStateContinue"):
+            return
         Activity.try_to_save = True
         Activity.start_activity(self._to_start, **kwargs)
 

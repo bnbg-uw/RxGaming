@@ -453,65 +453,54 @@ class LoadStateActivity(Activity):
     def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
         """"""
         self.on_load = saved_state.get("onLoad")
+        self._continue_after_close = False
         Activity._saved_state = {}
         
         # TODO make strings a declarative setting/localizable
         self.label = QLabel("What would you like to do?")
-        self.load_button = QPushButton("Work from saved file")
+        self.load_project_button = QPushButton("Work from saved project")
+        self.load_settings_button = QPushButton("Load project settings")
         self.new_button = QPushButton("Start new project")
         
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.label)
-        self.layout.addWidget(self.load_button)
+        self.layout.addWidget(self.load_project_button)
+        self.layout.addWidget(self.load_settings_button)
         self.layout.addWidget(self.new_button)
         self.window.setLayout(self.layout)
         self.window.setWindowTitle("Load a file")
         
-        self.load_button.clicked.connect(self.load_clicked)
+        self.load_project_button.clicked.connect(self.load_project_clicked)
+        self.load_settings_button.clicked.connect(self.load_settings_clicked)
         self.new_button.clicked.connect(self.new_clicked)
     
     def save(self) -> SavedState:
         """"""
-        return {}
+        return {"LoadStateContinue": self._continue_after_close}
     
-    def load_clicked(self, checked: bool = False) -> None:
-        selected_path = self._choose_load_target(self.window)
+    def load_project_clicked(self, checked: bool = False) -> None:
+        del checked
+        selected_path = QFileDialog.getExistingDirectory(self.window, "Select project folder")
         if selected_path == "":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
                 "Choose a location",
-                "Please select a settings JSON file or a project folder to open",
+                "Please select a project folder to open",
             )
             return
         path = Path(selected_path)
-        if path.is_file() and path.suffix.lower() != ".json":
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Unsupported file",
-                "Please choose a settings JSON file or a project folder.",
-            )
-            return
 
-        from persistence import read_project_settings_file, read_project_snapshot
+        from persistence import read_project_snapshot
 
         try:
-            if path.is_dir():
-                loaded = read_project_snapshot(path)
-                saved_state = {
-                    "ProjectSettings": loaded.project_settings,
-                    "ProjectArea": loaded.project_area,
-                    "ProjectSettingsForm": loaded.form_state,
-                    "ProjectSnapshotPath": str(loaded.project_root),
-                    "SessionState": loaded.session_state,
-                }
-            elif path.suffix.lower() == ".json":
-                loaded = read_project_settings_file(path)
-                saved_state = {
-                    "ProjectSettingsForm": loaded.form_state,
-                    "save_file_location": str(loaded.settings_path),
-                }
-            else:
-                raise ValueError("Please choose a settings JSON file or a project folder.")
+            loaded = read_project_snapshot(path)
+            saved_state = {
+                "ProjectSettings": loaded.project_settings,
+                "ProjectArea": loaded.project_area,
+                "ProjectSettingsForm": loaded.form_state,
+                "ProjectSnapshotPath": str(loaded.project_root),
+                "SessionState": loaded.session_state,
+            }
         except Exception as exc:
             Activity._show_message(
                 QMessageBox.Icon.Warning,
@@ -521,24 +510,54 @@ class LoadStateActivity(Activity):
             return
 
         Activity._saved_state = saved_state
+        self._continue_after_close = True
         if self.on_load is not None:
             self.on_load(saved_state)
         self.stop()
 
-    @staticmethod
-    def _choose_load_target(parent: Any) -> str:
-        dialog = QFileDialog(parent, "Open...")
-        dialog.setFileMode(QFileDialog.FileMode.AnyFile)
-        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-        dialog.setNameFilter("JSON files (*.json);;All files (*)")
-        dialog.setDirectory(str(Path.cwd()))
-        if dialog.exec() == 0:
-            return ""
-        selected_files = dialog.selectedFiles()
-        if not selected_files:
-            return ""
-        return selected_files[0]
+    def load_settings_clicked(self, checked: bool = False) -> None:
+        del checked
+        selected_path = QFileDialog.getOpenFileName(self.window, "Select settings .json", "", "*.json")[0]
+        if selected_path == "":
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Choose a location",
+                "Please select a settings JSON file to open to open",
+            )
+            return
+        path = Path(selected_path)
+
+        if path.is_file() and path.suffix.lower() != ".json":
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Unsupported file",
+                "Please choose a settings JSON file or a project folder.",
+            )
+            return
+
+        from persistence import read_project_settings_file
+        
+        try:
+            loaded = read_project_settings_file(path)
+            saved_state = {
+                "ProjectSettingsForm": loaded.form_state,
+                "save_file_location": str(loaded.settings_path),
+            }
+        except Exception as exc:
+            Activity._show_message(
+                QMessageBox.Icon.Warning,
+                "Open failed",
+                str(exc),
+            )
+            return
+
+        Activity._saved_state = saved_state
+        self._continue_after_close = True
+        if self.on_load is not None:
+            self.on_load(saved_state)
+        self.stop()
     
     def new_clicked(self, checked: bool = False) -> None:
+        del checked
+        self._continue_after_close = True
         self.stop()
