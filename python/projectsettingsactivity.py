@@ -69,7 +69,10 @@ class ProjectSettingsActivity(Activity):
         self.threads_edit = QSpinBox()
         self.threads_edit.setMinimum(1)
         self.auto_save_checkbox = QCheckBox()
-        self.auto_save_line_edit = QFileSelectionLineEdit(filter="JSON files (*.json)", new_file=True)
+        self.auto_save_line_edit = QFileSelectionLineEdit(
+            caption="Choose project folder...",
+            file_type=QFileSelectionLineEdit.FileType.Directory,
+        )
         self.auto_save_line_edit.setEnabled(False)
 
         form_layout = QFormLayout()
@@ -80,7 +83,7 @@ class ProjectSettingsActivity(Activity):
         form_layout.addRow("Unit name field (optional)", self.unit_name_edit)
         form_layout.addRow("Number of threads to process on:", self.threads_edit)
         form_layout.addRow("Auto-Save?", self.auto_save_checkbox)
-        form_layout.addRow("Save File Location", self.auto_save_line_edit)
+        form_layout.addRow("Project Folder", self.auto_save_line_edit)
 
         self.start_button = QPushButton("Start")
         self.save_button = QPushButton("Save settings")
@@ -131,10 +134,10 @@ class ProjectSettingsActivity(Activity):
 
         if auto_save_path is not None:
             if auto_save_text == "":
-                self.notify_exception("Enter a project save path before enabling Auto-Save.")
+                self.notify_exception("Enter a project folder path before enabling Auto-Save.")
                 return
             if not auto_save_path.parent.exists():
-                self.notify_exception("The Auto-Save file path does not exist. Enter a valid file path before continuing.")
+                self.notify_exception("The parent folder for the project folder does not exist. Enter a valid folder path before continuing.")
                 return
 
         if not unit_poly_path.exists():
@@ -222,7 +225,7 @@ class ProjectSettingsActivity(Activity):
             save_path = Path(self.save_file_location)
             if save_path.parent.exists():
                 write_project_settings_file(save_path, self._collect_form_state(), app_version=Activity.version)
-                self.notify_save_success("Settings saved successfully.")
+                self.notify_save_success("Settings file saved successfully.")
                 return
         self.save_as_clicked()
 
@@ -232,9 +235,9 @@ class ProjectSettingsActivity(Activity):
 
         selected_path = QFileDialog.getSaveFileName(
             self.window,
-            "Save settings as...",
+            "Save settings file as...",
             str(self._default_settings_path()),
-            "JSON files (*.json)",
+            "RxGaming settings files (*.json)",
         )[0]
         if selected_path == "":
             return
@@ -242,7 +245,7 @@ class ProjectSettingsActivity(Activity):
         save_path = Path(selected_path)
         write_project_settings_file(save_path, self._collect_form_state(), app_version=Activity.version)
         self.save_file_location = str(save_path)
-        self.notify_save_success("Settings saved successfully.")
+        self.notify_save_success("Settings file saved successfully.")
 
     @Slot(str)
     def _append_progress(self, text: str) -> None:

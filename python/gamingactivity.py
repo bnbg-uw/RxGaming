@@ -28,17 +28,11 @@ class GamingActivity(Activity):
         self.window.setCentralWidget(self.central_widget)
 
         self.saved_state = saved_state
-        print("a")
         self.project_settings_form = saved_state.get("ProjectSettingsForm")
-        print("b")
         self.project_snapshot_path = saved_state.get("ProjectSnapshotPath")
-        print("c")
         self.project_settings = self._load_project_settings(saved_state)
-        print("d")
         self.project_area = self._load_project_area(saved_state, self.project_settings)
-        print("e")
         self._persistence = self._build_persistence()
-        print("f")
         self.tab_widget = GamingTabs(
             self.project_settings,
             self.project_area,
@@ -87,17 +81,16 @@ class GamingActivity(Activity):
     def save_project_as(self) -> None:
         from PySide6.QtWidgets import QFileDialog
 
-        selected_path = QFileDialog.getSaveFileName(
+        selected_path = QFileDialog.getExistingDirectory(
             self.window,
-            "Save project snapshot as...",
-            str(self._default_project_manifest_path()),
-            "JSON files (*.json)",
-        )[0]
+            "Save project as...",
+            str(self._default_project_root()),
+        )
         if selected_path == "":
             return
 
-        selected_manifest = Path(selected_path)
-        self.project_snapshot_path = str(selected_manifest)
+        selected_root = Path(selected_path)
+        self.project_snapshot_path = str(selected_root)
         self._persistence = self._build_persistence()
         if self._persistence is None:
             self._notify_save_failure("Could not create a project persistence target.")
@@ -222,13 +215,13 @@ class GamingActivity(Activity):
             form_state=self.project_settings_form if isinstance(self.project_settings_form, dict) else None,
         )
 
-    def _default_project_manifest_path(self) -> Path:
+    def _default_project_root(self) -> Path:
         if self.project_snapshot_path:
             return Path(self.project_snapshot_path)
         save_path = getattr(self.project_settings, "savePath", "")
         if save_path:
             return Path(save_path)
-        return Path.cwd() / "project.json"
+        return Path.cwd()
 
     @staticmethod
     def _notify_save_success(text: str) -> None:

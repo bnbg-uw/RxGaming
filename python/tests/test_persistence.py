@@ -1,10 +1,46 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
+import types
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+
+try:
+    import rxgaming_core  # type: ignore  # noqa: F401
+except ImportError:
+    stub = types.ModuleType("rxgaming_core")
+
+    class StubProjectSettings:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            fields = [
+                "name",
+                "unitPolyPath",
+                "refDataPath",
+                "mcsPropPath",
+                "fiaPath",
+                "lidarPath",
+                "unitName",
+                "savePath",
+                "nThread",
+            ]
+            for field, value in zip(fields, args):
+                setattr(self, field, value)
+            for field in fields:
+                if field in kwargs:
+                    setattr(self, field, kwargs[field])
+
+    class StubProjectArea:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+
+    stub.ProjectSettings = StubProjectSettings
+    stub.ProjectArea = StubProjectArea
+    stub.load_project_area = lambda path: object()
+    stub.save_project_area = lambda project_area, path: Path(path).write_bytes(b"stub")
+    sys.modules["rxgaming_core"] = stub
 
 import persistence  # noqa: E402
 from gaming_ui.state import StandViewState  # noqa: E402
@@ -55,11 +91,11 @@ class TestPersistence(unittest.TestCase):
             unit_name="NAME",
             threads=4,
             auto_save_enabled=True,
-            auto_save_path="C:/tmp/project.json",
+            auto_save_path="C:/tmp/project-folder",
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "settings.json"
+            path = Path(tmpdir) / "demo-template.json"
             persistence.write_project_settings_file(path, form_state, app_version="1.2.3")
 
             loaded = persistence.read_project_settings_file(path)
@@ -89,16 +125,16 @@ class TestPersistence(unittest.TestCase):
             "fia",
             "missing-lidar-folder",
             "NAME",
-            "project.json",
+            "project-folder",
             8,
         )
         form_state = {"project_name": "Demo", "threads": 8}
         session_state = StandViewState(selected_unit_index=2, active_page=1, raster_mode=3, show_treatment=True).to_dict()
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = Path(tmpdir) / "project.json"
-            written_manifest = persistence.write_project_snapshot(
-                manifest_path,
+            project_root = Path(tmpdir) / "project-folder"
+            written_root = persistence.write_project_snapshot(
+                project_root,
                 app_version="2.0.0",
                 project_settings=project_settings,
                 project_area=fake_project_area,
@@ -106,26 +142,63 @@ class TestPersistence(unittest.TestCase):
                 form_state=form_state,
             )
 
-            self.assertEqual(manifest_path, written_manifest)
+            self.assertEqual(project_root, written_root)
             self.assertEqual(1, len(saved_native_payloads))
             self.assertIs(fake_project_area, saved_native_payloads[0][0])
-            self.assertTrue((manifest_path.parent / persistence.PROJECTAREA_FILE_NAME).exists())
+            self.assertTrue((project_root / persistence.PROJECTAREA_FILE_NAME).exists())
 
-            loaded = persistence.read_project_snapshot(manifest_path)
-            self.assertEqual(manifest_path, loaded.manifest_path)
+            loaded = persistence.read_project_snapshot(project_root)
+            self.assertEqual(project_root, loaded.project_root)
             self.assertIs(fake_project_area, loaded.project_area)
             self.assertEqual(session_state, loaded.session_state)
             self.assertEqual(form_state, loaded.form_state)
             self.assertEqual("missing-lidar-folder", loaded.project_settings.lidarPath)
 
-            manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_payload = json.loads((project_root / persistence.PROJECT_MANIFEST_NAME).read_text(encoding="utf-8"))
             self.assertEqual("rxgaming-project", manifest_payload["format"])
+
+    def test_project_snapshot_read_requires_project_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            invalid_path = Path(tmpdir) / "project.json"
+            invalid_path.write_text("{}", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "project folder"):
+                persistence.read_project_snapshot(invalid_path)
+
+    def test_project_settings_file_inside_project_folder_loads_as_settings(self) -> None:
+        project_settings = FakeProjectSettings(
+            "Demo",
+            "units.shp",
+            "reference.csv",
+            "props.csv",
+            "fia",
+            "lidar-folder",
+            "NAME",
+            "project-folder",
+            8,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_path = Path(tmpdir) / "settings.json"
+            payload = {
+                "format": "rxgaming-project-settings",
+                "schema_version": persistence.SCHEMA_VERSION,
+                "project_settings": persistence.serialize_project_settings(project_settings),
+            }
+            settings_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            loaded = persistence.read_project_settings_file(settings_path)
+
+            self.assertEqual("Demo", loaded.form_state["project_name"])
+            self.assertEqual("units.shp", loaded.form_state["unit_poly_path"])
+            self.assertEqual("project-folder", loaded.form_state["auto_save_path"])
+            self.assertTrue(loaded.form_state["auto_save_enabled"])
 
     def test_snapshot_session_persistence_updates_session_file(self) -> None:
         saved_snapshots: list[dict[str, object]] = []
 
         def fake_write_project_snapshot(
-            manifest_path: str | Path,
+            project_root: str | Path,
             *,
             app_version: str,
             project_settings: object,
@@ -135,7 +208,7 @@ class TestPersistence(unittest.TestCase):
         ) -> Path:
             saved_snapshots.append(
                 {
-                    "manifest_path": str(manifest_path),
+                    "project_root": str(project_root),
                     "app_version": app_version,
                     "project_settings": project_settings,
                     "project_area": project_area,
@@ -143,19 +216,19 @@ class TestPersistence(unittest.TestCase):
                     "form_state": form_state,
                 }
             )
-            manifest = Path(manifest_path)
-            manifest.parent.mkdir(parents=True, exist_ok=True)
-            manifest.write_text("{}", encoding="utf-8")
-            (manifest.parent / persistence.SESSION_FILE_NAME).write_text("{}", encoding="utf-8")
-            return manifest
+            root = Path(project_root)
+            root.mkdir(parents=True, exist_ok=True)
+            (root / persistence.PROJECT_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+            (root / persistence.SESSION_FILE_NAME).write_text("{}", encoding="utf-8")
+            return root
 
         original_write_project_snapshot = persistence.write_project_snapshot
         persistence.write_project_snapshot = fake_write_project_snapshot
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
-                manifest_path = Path(tmpdir) / "project.json"
+                project_root = Path(tmpdir) / "project-folder"
                 session_persistence = persistence.ProjectSnapshotSessionPersistence(
-                    manifest_path,
+                    project_root,
                     app_version="9.9.9",
                     project_settings=SimpleNamespace(),
                     project_area=SimpleNamespace(),
@@ -166,7 +239,7 @@ class TestPersistence(unittest.TestCase):
                 session_persistence.initialize_snapshot(state)
                 session_persistence.save_session(state, "page_changed")
 
-                session_payload = json.loads((manifest_path.parent / persistence.SESSION_FILE_NAME).read_text(encoding="utf-8"))
+                session_payload = json.loads((project_root / persistence.SESSION_FILE_NAME).read_text(encoding="utf-8"))
                 self.assertEqual(state.to_dict(), session_payload["session_state"])
                 self.assertEqual(1, len(saved_snapshots))
 

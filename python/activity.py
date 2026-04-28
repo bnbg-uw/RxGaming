@@ -188,6 +188,11 @@ class Activity(ABC):
         Activity._saved_state.update(activity.save())
         if activity in Activity._activities:
             Activity._activities.remove(activity)
+        if Activity._stopping:
+            if len(Activity._activities) == 0:
+                Activity._stopping = False
+                Activity._app.quit()
+            return
         if Activity._starting or Activity._stopping:
             return
         
@@ -329,26 +334,62 @@ class SaveStateActivity(Activity):
         return {}
     
     def yes_clicked(self, checked: bool = False) -> None:
-        self.prompt_and_save(self.saved_state)
-        self.stop()
+        del checked
+        if self.prompt_and_save(self.saved_state):
+            self.stop()
 
-    def prompt_and_save(self, saved_state: Mapping[str, Any]) -> None:
+    def prompt_and_save(self, saved_state: Mapping[str, Any]) -> bool:
         has_project_snapshot = "ProjectArea" in saved_state and "ProjectSettings" in saved_state
-        default_name = "project.json" if has_project_snapshot else "settings.json"
+        if has_project_snapshot:
+            selected_path = QFileDialog.getExistingDirectory(
+                None,
+                "Save project folder as...",
+                str(self._default_project_folder(saved_state)),
+            )
+            if selected_path == "":
+                Activity._show_message(
+                    QMessageBox.Icon.Warning,
+                    "Choose a folder",
+                    "Please select a project folder to save your work",
+                )
+                return False
+            self.write_file(selected_path, saved_state)
+            return True
+
         file_path = QFileDialog.getSaveFileName(
             None,
-            "Save as...",
-            str(Path.cwd() / default_name),
-            "RxGaming JSON files (*.json)",
+            "Save settings as...",
+            str(self._default_settings_file(saved_state)),
+            "RxGaming settings files (*.json)",
         )[0]
         if file_path == "":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
                 "Choose a file",
-                "Please select a JSON file to save your work",
+                "Please select a settings JSON file to save your work",
             )
-            return
+            return False
         self.write_file(file_path, saved_state)
+        return True
+
+    @staticmethod
+    def _default_project_folder(saved_state: Mapping[str, Any]) -> Path:
+        project_root = saved_state.get("ProjectSnapshotPath")
+        if isinstance(project_root, str) and project_root:
+            return Path(project_root)
+
+        project_settings = saved_state.get("ProjectSettings")
+        save_path = getattr(project_settings, "savePath", "")
+        if isinstance(save_path, str) and save_path:
+            return Path(save_path)
+        return Path.cwd()
+
+    @staticmethod
+    def _default_settings_file(saved_state: Mapping[str, Any]) -> Path:
+        save_file_location = saved_state.get("save_file_location")
+        if isinstance(save_file_location, str) and save_file_location:
+            return Path(save_file_location)
+        return Path.cwd() / "settings.json"
 
     @staticmethod
     def write_file(file_path: str | Path, saved_state: Mapping[str, Any]) -> None:
@@ -434,48 +475,43 @@ class LoadStateActivity(Activity):
         return {}
     
     def load_clicked(self, checked: bool = False) -> None:
-        file_path = QFileDialog.getOpenFileName(
-            self.window,
-            "Open...",
-            "",
-            "JSON files (*.json)",
-        )[0]
-        if file_path == "":
+        selected_path = self._choose_load_target(self.window)
+        if selected_path == "":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
-                "Choose a file",
-                "Please select a project.json or settings.json file to open",
+                "Choose a location",
+                "Please select a settings JSON file or a project folder to open",
             )
             return
-        path = Path(file_path)
-        if path.suffix.lower() != ".json":
+        path = Path(selected_path)
+        if path.is_file() and path.suffix.lower() != ".json":
             Activity._show_message(
                 QMessageBox.Icon.Warning,
                 "Unsupported file",
-                "Legacy .dat pickle files are no longer supported. Please choose a settings.json or project.json file.",
+                "Please choose a settings JSON file or a project folder.",
             )
             return
 
         from persistence import read_project_settings_file, read_project_snapshot
 
         try:
-            if path.name == "settings.json":
-                loaded = read_project_settings_file(path)
-                saved_state = {
-                    "ProjectSettingsForm": loaded.form_state,
-                    "save_file_location": str(loaded.settings_path),
-                }
-            elif path.name == "project.json":
+            if path.is_dir():
                 loaded = read_project_snapshot(path)
                 saved_state = {
                     "ProjectSettings": loaded.project_settings,
                     "ProjectArea": loaded.project_area,
                     "ProjectSettingsForm": loaded.form_state,
-                    "ProjectSnapshotPath": str(loaded.manifest_path),
+                    "ProjectSnapshotPath": str(loaded.project_root),
                     "SessionState": loaded.session_state,
                 }
+            elif path.suffix.lower() == ".json":
+                loaded = read_project_settings_file(path)
+                saved_state = {
+                    "ProjectSettingsForm": loaded.form_state,
+                    "save_file_location": str(loaded.settings_path),
+                }
             else:
-                raise ValueError("Please choose either settings.json or project.json.")
+                raise ValueError("Please choose a settings JSON file or a project folder.")
         except Exception as exc:
             Activity._show_message(
                 QMessageBox.Icon.Warning,
@@ -488,6 +524,21 @@ class LoadStateActivity(Activity):
         if self.on_load is not None:
             self.on_load(saved_state)
         self.stop()
+
+    @staticmethod
+    def _choose_load_target(parent: Any) -> str:
+        dialog = QFileDialog(parent, "Open...")
+        dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        dialog.setNameFilter("JSON files (*.json);;All files (*)")
+        dialog.setDirectory(str(Path.cwd()))
+        if dialog.exec() == 0:
+            return ""
+        selected_files = dialog.selectedFiles()
+        if not selected_files:
+            return ""
+        return selected_files[0]
     
     def new_clicked(self, checked: bool = False) -> None:
         self.stop()
