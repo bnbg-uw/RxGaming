@@ -16,18 +16,16 @@ persistent state information.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-from pathlib import Path
-from typing import Any, ClassVar, Mapping
+from typing import Any, Callable, ClassVar, Mapping
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from widgets import QWindow
 
 
 SavedState = dict[str, Any]
-
 
 def _get_qapplication() -> QApplication:
     instance = QApplication.instance()
@@ -76,6 +74,7 @@ class Activity(ABC):
     _starting: ClassVar[bool] = False
     _stopping: ClassVar[bool] = False  # Flag, True when application is shutting down
     _event_loop_running: ClassVar[bool] = False
+    _last_activity_handler: ClassVar[Callable[[type[Activity], SavedState], None] | None] = None
     version = "1.0.11"
     
     try_to_save = False
@@ -172,6 +171,24 @@ class Activity(ABC):
         Hooks in here to get instance, then passes to static method.
         """
         self._finish_activity(self)
+
+    @classmethod
+    def set_last_activity_handler(
+        cls,
+        handler: Callable[[type[Activity], SavedState], None] | None,
+    ) -> None:
+        """Registers project-specific behavior for final activity shutdown."""
+        cls._last_activity_handler = handler
+
+    @staticmethod
+    def _handle_last_activity_closed(activity: Activity) -> None:
+        '''Conceptually, this is created to allow hooking in to a saving on exit system, which may be project specific, so is not included in the ABC'''
+        if Activity.try_to_save and Activity._last_activity_handler is not None:
+            Activity._stopping = True
+            Activity._saved_state.update({"LastActivity": type(activity)})
+            Activity._last_activity_handler(type(activity), dict(Activity._saved_state))
+            return
+        Activity._app.quit()
     
     # Clean up after an activity
     #  Deal with saving state
@@ -218,12 +235,7 @@ class Activity(ABC):
         # If all activities are closed, either save and quit or just stop the
         # current event loop so the caller can decide what to do next.
         if len(Activity._activities) == 0:
-            if Activity.try_to_save:
-                Activity._stopping = True
-                Activity._saved_state.update({"LastActivity": type(activity)})
-                Activity.start_activity(SaveStateActivity, None, Activity._saved_state)
-            else:
-                Activity._app.quit()
+            Activity._handle_last_activity_closed(activity)
     
     # Factory method for starting a new activity
     # Call this instead of creating Activity instances directly through constructor
@@ -295,269 +307,3 @@ class Activity(ABC):
         msg.setWindowTitle(title)
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()
-
-
-class SaveStateActivity(Activity):
-    """Prompts user to store the state instance dictionary.
-    
-    The ``SaveStateActivity`` generally does not need to be created,
-    since it is primarily used internally by ``Activity``.
-    However, there is no reason it couldn't be used if desired.
-    
-    Usage is like any other activity::
-    
-        Activity.start_activity(SaveStateActivity)
-    """
-    
-    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
-        """"""
-        self.label = QLabel("Would you like to save your work?")
-        self.yes_button = QPushButton("Yes")
-        self.no_button = QPushButton("No")
-        
-        self.vlayout = QVBoxLayout()
-        self.hlayout = QHBoxLayout()
-        self.hlayout.addWidget(self.yes_button)
-        self.hlayout.addWidget(self.no_button)
-        self.vlayout.addWidget(self.label)
-        self.vlayout.addLayout(self.hlayout)
-        self.window.setLayout(self.vlayout)
-        self.window.setWindowTitle("Save your work")
-        
-        self.yes_button.clicked.connect(self.yes_clicked)
-        self.no_button.clicked.connect(self.no_clicked)
-        
-        self.saved_state = saved_state
-    
-    def save(self) -> SavedState:
-        """"""
-        return {}
-    
-    def yes_clicked(self, checked: bool = False) -> None:
-        del checked
-        if self.prompt_and_save(self.saved_state):
-            self.stop()
-
-    def prompt_and_save(self, saved_state: Mapping[str, Any]) -> bool:
-        has_project_snapshot = "ProjectArea" in saved_state and "ProjectSettings" in saved_state
-        if has_project_snapshot:
-            selected_path = QFileDialog.getExistingDirectory(
-                None,
-                "Save project folder as...",
-                str(self._default_project_folder(saved_state)),
-            )
-            if selected_path == "":
-                Activity._show_message(
-                    QMessageBox.Icon.Warning,
-                    "Choose a folder",
-                    "Please select a project folder to save your work",
-                )
-                return False
-            self.write_file(selected_path, saved_state)
-            return True
-
-        file_path = QFileDialog.getSaveFileName(
-            None,
-            "Save settings as...",
-            str(self._default_settings_file(saved_state)),
-            "RxGaming settings files (*.json)",
-        )[0]
-        if file_path == "":
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Choose a file",
-                "Please select a settings JSON file to save your work",
-            )
-            return False
-        self.write_file(file_path, saved_state)
-        return True
-
-    @staticmethod
-    def _default_project_folder(saved_state: Mapping[str, Any]) -> Path:
-        project_root = saved_state.get("ProjectSnapshotPath")
-        if isinstance(project_root, str) and project_root:
-            return Path(project_root)
-
-        project_settings = saved_state.get("ProjectSettings")
-        save_path = getattr(project_settings, "savePath", "")
-        if isinstance(save_path, str) and save_path:
-            return Path(save_path)
-        return Path.cwd()
-
-    @staticmethod
-    def _default_settings_file(saved_state: Mapping[str, Any]) -> Path:
-        save_file_location = saved_state.get("save_file_location")
-        if isinstance(save_file_location, str) and save_file_location:
-            return Path(save_file_location)
-        return Path.cwd() / "settings.json"
-
-    @staticmethod
-    def write_file(file_path: str | Path, saved_state: Mapping[str, Any]) -> None:
-        from persistence import write_project_settings_file, write_project_snapshot
-
-        path = Path(file_path)
-        if "ProjectArea" in saved_state and "ProjectSettings" in saved_state:
-            project_settings = saved_state["ProjectSettings"]
-            project_area = saved_state["ProjectArea"]
-            if not isinstance(project_settings, object) or not isinstance(project_area, object):
-                raise TypeError("Saved project state is missing native project objects.")
-            session_state = saved_state.get("SessionState", {})
-            form_state = saved_state.get("ProjectSettingsForm")
-            write_project_snapshot(
-                path,
-                app_version=Activity.version,
-                project_settings=project_settings,
-                project_area=project_area,
-                session_state=session_state if isinstance(session_state, Mapping) else {},
-                form_state=form_state if isinstance(form_state, Mapping) else None,
-            )
-            return
-
-        form_state = saved_state.get("ProjectSettingsForm")
-        if isinstance(form_state, Mapping):
-            write_project_settings_file(path, form_state, app_version=Activity.version)
-            return
-
-        raise ValueError("No saveable project settings or project snapshot data were available.")
-
-    def no_clicked(self, checked: bool = False) -> None:
-        self.stop()
-
-
-# LoadStateActivity class
-#  Prompts user to begin new project or load from saved state
-#  If user chooses to load, it populates the Activity state instance
-class LoadStateActivity(Activity):
-    """Prompts user to begin new project or load from saved state.
-    
-    If user chooses to start a new project, this activity quits and it is assumed that the desired
-    activity will be started next. If the user chooses to load, then a file dialog is shown,
-    the selected file is loaded, and the loaded state instance is made available for subsequent activities.
-    
-    This activity looks for a special item in the ``saved_state`` dictionary (`onLoad`) that can provide an
-    optional callback to be executed once the state has been loaded. This can be useful when deciding what
-    part of an application to start given the state upon exit of the last session. There is also a special
-    item, `LastActivity`, that is saved whenever an application exits and can be used for this end.
-    Here is an example using this model::
-    
-        def on_loaded(saved_state):
-            if "LastActivity" in saved_state:
-                main.to_start = saved_state["Last_Activity"]
-        
-        def main():
-            main.to_start = NewProjectActivity
-            Activity.start_activity(LoadStateActivity, saved_state={"onLoad": on_loaded})
-            Activity.start_activity(main.to_start)
-    """     
-    
-    def on_start(self, saved_state: SavedState, **kwargs: Any) -> None:
-        """"""
-        self.on_load = saved_state.get("onLoad")
-        self._continue_after_close = False
-        Activity._saved_state = {}
-        
-        # TODO make strings a declarative setting/localizable
-        self.label = QLabel("What would you like to do?")
-        self.load_project_button = QPushButton("Work from saved project")
-        self.load_settings_button = QPushButton("Load project settings")
-        self.new_button = QPushButton("Start new project")
-        
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.label)
-        self.layout.addWidget(self.load_project_button)
-        self.layout.addWidget(self.load_settings_button)
-        self.layout.addWidget(self.new_button)
-        self.window.setLayout(self.layout)
-        self.window.setWindowTitle("Load a file")
-        
-        self.load_project_button.clicked.connect(self.load_project_clicked)
-        self.load_settings_button.clicked.connect(self.load_settings_clicked)
-        self.new_button.clicked.connect(self.new_clicked)
-    
-    def save(self) -> SavedState:
-        """"""
-        return {"LoadStateContinue": self._continue_after_close}
-    
-    def load_project_clicked(self, checked: bool = False) -> None:
-        del checked
-        selected_path = QFileDialog.getExistingDirectory(self.window, "Select project folder")
-        if selected_path == "":
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Choose a location",
-                "Please select a project folder to open",
-            )
-            return
-        path = Path(selected_path)
-
-        from persistence import read_project_snapshot
-
-        try:
-            loaded = read_project_snapshot(path)
-            saved_state = {
-                "ProjectSettings": loaded.project_settings,
-                "ProjectArea": loaded.project_area,
-                "ProjectSettingsForm": loaded.form_state,
-                "ProjectSnapshotPath": str(loaded.project_root),
-                "SessionState": loaded.session_state,
-            }
-        except Exception as exc:
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Open failed",
-                str(exc),
-            )
-            return
-
-        Activity._saved_state = saved_state
-        self._continue_after_close = True
-        if self.on_load is not None:
-            self.on_load(saved_state)
-        self.stop()
-
-    def load_settings_clicked(self, checked: bool = False) -> None:
-        del checked
-        selected_path = QFileDialog.getOpenFileName(self.window, "Select settings .json", "", "*.json")[0]
-        if selected_path == "":
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Choose a location",
-                "Please select a settings JSON file to open to open",
-            )
-            return
-        path = Path(selected_path)
-
-        if path.is_file() and path.suffix.lower() != ".json":
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Unsupported file",
-                "Please choose a settings JSON file or a project folder.",
-            )
-            return
-
-        from persistence import read_project_settings_file
-        
-        try:
-            loaded = read_project_settings_file(path)
-            saved_state = {
-                "ProjectSettingsForm": loaded.form_state,
-                "save_file_location": str(loaded.settings_path),
-            }
-        except Exception as exc:
-            Activity._show_message(
-                QMessageBox.Icon.Warning,
-                "Open failed",
-                str(exc),
-            )
-            return
-
-        Activity._saved_state = saved_state
-        self._continue_after_close = True
-        if self.on_load is not None:
-            self.on_load(saved_state)
-        self.stop()
-    
-    def new_clicked(self, checked: bool = False) -> None:
-        del checked
-        self._continue_after_close = True
-        self.stop()

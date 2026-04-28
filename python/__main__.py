@@ -83,9 +83,11 @@ def _bootstrap_native_dll_directories(base_path: Path | None = None) -> list[Any
 
 _DLL_DIR_HANDLES = _bootstrap_native_dll_directories()
 
-from activity import Activity, LoadStateActivity
+from activity import Activity
+from loadstateactivity import LoadStateActivity
 from projectsettingsactivity import ProjectSettingsActivity
 from rxgaming_core import set_proj_db_path
+from savestateactivity import start_save_state_activity
 
 
 def resolve_prop_table_path(base_path: Path | None = None) -> Path:
@@ -150,6 +152,7 @@ def handle_exception(exc_type: type[BaseException], exc_value: BaseException, ex
 def main() -> int:
     sys.excepthook = handle_exception
 
+    Activity.set_last_activity_handler(start_save_state_activity)
     app_context = AppContext()
     set_proj_db_path(proj_data_directory_arg())
     prop_table_path = resolve_prop_table_path()
