@@ -44,28 +44,7 @@ namespace rxgaming {
 
     py::array_t<int> RxGamingRxUnit::get_clump_map() const {
         try {    
-            std::unordered_map<int, int> taoIds;
-            auto clumpMap = basinMap;
-            auto rawClumps = getRawClumps(taos);
-            for (size_t i = 0; i < taos.size(); ++i) {
-                auto e = clumpMap.extract(taos.x(i), taos.y(i), lapis::ExtractMethod::near);
-                if (e.has_value() && e.value() != 1) {
-                    taoIds.emplace(std::make_pair(e.value(), (int)rawClumps[i]));
-                }
-            }
-    
-            for (lapis::cell_t j = 0; j < clumpMap.ncell(); ++j) {
-                if (clumpMap[j].has_value()) {
-                    auto x = taoIds.find(clumpMap[j].value());
-                    if (x != taoIds.end()) {
-                        clumpMap[j].value() = x->second;
-                    }
-                    else {
-                        clumpMap[j].value() = 0;
-                    }
-                }
-            }
-            return raster_to_numpy(clumpMap);
+            return raster_to_numpy(getClumpMapRaster(taos, basinMap));
         }
         catch (std::exception e) {
             std::cout << e.what() << "\n";
@@ -83,24 +62,7 @@ namespace rxgaming {
     }
 
     py::array_t<double> RxGamingRxUnit::get_treat_chm() const {
-        std::unordered_set<int> basinIds;
-        for (size_t i = 0; i < treatedTaos.size(); ++i) {
-            auto v = basinMap.extract(treatedTaos.x(i), treatedTaos.y(i), lapis::ExtractMethod::near);
-            if (v.has_value()) {
-                basinIds.emplace(v.value());
-            }
-        }
-
-        auto thisChm = chm;
-        for (lapis::cell_t i = 0; i < thisChm.ncell(); ++i) {
-            if (thisChm[i].has_value()) {
-                if (basinIds.find(basinMap[i].value()) == basinIds.end()) {
-                    thisChm[i].value() = 0;
-                }
-            }
-        }
-
-        return(raster_to_numpy(thisChm));
+        return(raster_to_numpy(getTreatChmRaster()));
     }
 
     py::array_t<int> RxGamingRxUnit::get_treat_basin() const {
@@ -122,31 +84,7 @@ namespace rxgaming {
 
     py::array_t<int> RxGamingRxUnit::get_treat_clump_map() const {
         try {
-            auto b = getTreatBasin();
-    
-            std::unordered_map<int, int> taoIds;
-            
-            auto groupsizes = getRawClumps(treatedTaos);
-            for (size_t i = 0; i < treatedTaos.size(); ++i) {
-                auto e = b.extract(treatedTaos.x(i), treatedTaos.y(i), lapis::ExtractMethod::near);
-                if (e.has_value() && e.value() != 1) {
-                    taoIds.emplace(std::make_pair(e.value(), (int)groupsizes[i]));
-                }
-            }
-    
-            for (lapis::cell_t j = 0; j < b.ncell(); ++j) {
-                if (b[j].has_value()) {
-                    auto x = taoIds.find(b[j].value());
-                    if (x != taoIds.end()) {
-                        b[j].value() = x->second;
-                    }
-                    else {
-                        b[j].value() = 0;
-                    }
-                }
-            }
-    
-            return(raster_to_numpy(b));
+            return(raster_to_numpy(getClumpMapRaster(treatedTaos, getTreatBasin())));
         }
         catch (std::exception e) {
             std::cout << e.what() << "\n";
@@ -272,6 +210,21 @@ namespace rxgaming {
         }
 
         dataset->FlushCache();
+    }
+
+    void RxGamingRxUnit::write_chm_raster(const std::string& outputPath, bool treated) const {
+        auto raster = treated ? getTreatChmRaster() : chm;
+        raster.writeRaster(outputPath);
+    }
+
+    void RxGamingRxUnit::write_basin_raster(const std::string& outputPath, bool treated) const {
+        auto raster = treated ? getTreatBasin() : basinMap;
+        raster.writeRaster(outputPath);
+    }
+
+    void RxGamingRxUnit::write_clumpmap_raster(const std::string& outputPath, bool treated) const {
+        auto raster = treated ? getClumpMapRaster(treatedTaos, getTreatBasin()) : getClumpMapRaster(taos, basinMap);
+        raster.writeRaster(outputPath);
     }
 
     std::vector<rxtools::StructureSummary> RxGamingRxUnit::get_simulated_structures(double bbDbh) const {
@@ -427,6 +380,51 @@ namespace rxgaming {
             clumpSizes.push_back(g.clumpSize(i));
         }
         return clumpSizes;
+    }
+
+    lapis::Raster<double> RxGamingRxUnit::getTreatChmRaster() const {
+        std::unordered_set<int> basinIds;
+        for (size_t i = 0; i < treatedTaos.size(); ++i) {
+            auto v = basinMap.extract(treatedTaos.x(i), treatedTaos.y(i), lapis::ExtractMethod::near);
+            if (v.has_value()) {
+                basinIds.emplace(v.value());
+            }
+        }
+
+        auto thisChm = chm;
+        for (lapis::cell_t i = 0; i < thisChm.ncell(); ++i) {
+            if (thisChm[i].has_value()) {
+                if (basinIds.find(basinMap[i].value()) == basinIds.end()) {
+                    thisChm[i].value() = 0;
+                }
+            }
+        }
+        return thisChm;
+    }
+
+    lapis::Raster<int> RxGamingRxUnit::getClumpMapRaster(rxtools::TaoList taos, const lapis::Raster<int>& sourceBasin) const {
+        std::unordered_map<int, int> taoIds;
+        auto clumpMap = sourceBasin;
+        auto rawClumps = getRawClumps(taos);
+        for (size_t i = 0; i < taos.size(); ++i) {
+            auto e = clumpMap.extract(taos.x(i), taos.y(i), lapis::ExtractMethod::near);
+            if (e.has_value() && e.value() != 1) {
+                taoIds.emplace(std::make_pair(e.value(), static_cast<int>(rawClumps[i])));
+            }
+        }
+
+        for (lapis::cell_t j = 0; j < clumpMap.ncell(); ++j) {
+            if (clumpMap[j].has_value()) {
+                auto x = taoIds.find(clumpMap[j].value());
+                if (x != taoIds.end()) {
+                    clumpMap[j].value() = x->second;
+                }
+                else {
+                    clumpMap[j].value() = 0;
+                }
+            }
+        }
+        return clumpMap;
     }
 
     lapis::Raster<int> RxGamingRxUnit::getTreatBasin() const {

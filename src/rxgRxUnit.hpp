@@ -58,6 +58,9 @@ namespace rxgaming {
             int mapWidthPx,
             int mapHeightPx
         ) const;
+        void write_chm_raster(const std::string& outputPath, bool treated) const;
+        void write_basin_raster(const std::string& outputPath, bool treated) const;
+        void write_clumpmap_raster(const std::string& outputPath, bool treated) const;
 
         std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
         void refresh_derived_state();
@@ -88,6 +91,8 @@ namespace rxgaming {
         py::array_t<double> taolist_to_numpy(rxtools::TaoList taos) const;
         lapis::Raster<double> computeHillshade(const lapis::Raster<double>& chm, double az = 315, double elev = 45);
         std::vector<size_t> getRawClumps(rxtools::TaoList taos) const;
+        lapis::Raster<double> getTreatChmRaster() const;
+        lapis::Raster<int> getClumpMapRaster(rxtools::TaoList taos, const lapis::Raster<int>& sourceBasin) const;
         lapis::Raster<int> getTreatBasin() const;
     };
 } // namespace rxgaming

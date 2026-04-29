@@ -11,7 +11,15 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 
 from activity import Activity
-from gaming_export import export_current_view, export_features, export_georeferenced_raster, export_raster, export_treelist
+from gaming_export import (
+    export_basins_raster,
+    export_chm_raster,
+    export_clumpmap_raster,
+    export_current_view,
+    export_features,
+    export_georeferenced_raster,
+    export_treelist,
+)
 from gaming_ui import GamingTabs
 from persistence import ProjectSnapshotSessionPersistence
 from rxgaming_core import ProjectArea, ProjectSettings
@@ -107,8 +115,14 @@ class GamingActivity(Activity):
     def export_tif(self) -> None:
         export_current_view(self.tab_widget, self.window)
 
-    def export_rasters(self) -> None:
-        export_raster(self.tab_widget, self.window)
+    def export_chm_raster(self) -> None:
+        export_chm_raster(self.tab_widget, self.window)
+
+    def export_basins_raster(self) -> None:
+        export_basins_raster(self.tab_widget, self.window)
+
+    def export_clumpmap_raster(self) -> None:
+        export_clumpmap_raster(self.tab_widget, self.window)
 
     def export_georeferenced_raster(self) -> None:
         export_georeferenced_raster(self.tab_widget, self.window)
@@ -152,8 +166,14 @@ class GamingActivity(Activity):
         self.export_tif_action = QAction('&Export window image ("*.png")', self.window)
         self.export_tif_action.triggered.connect(self.export_tif)
 
-        self.export_rasters_action = QAction('&Export raster data ("*.npy")', self.window)
-        self.export_rasters_action.triggered.connect(self.export_rasters)
+        self.export_chm_raster_action = QAction('&Export CHM ("*.tif")', self.window)
+        self.export_chm_raster_action.triggered.connect(self.export_chm_raster)
+
+        self.export_basins_raster_action = QAction('&Export basins ("*.tif")', self.window)
+        self.export_basins_raster_action.triggered.connect(self.export_basins_raster)
+
+        self.export_clumpmap_raster_action = QAction('&Export clumpmap ("*.tif")', self.window)
+        self.export_clumpmap_raster_action.triggered.connect(self.export_clumpmap_raster)
 
         self.export_georeferenced_raster_action = QAction('&Export georeferenced raster image ("*.tif")', self.window)
         self.export_georeferenced_raster_action.triggered.connect(self.export_georeferenced_raster)
@@ -177,7 +197,9 @@ class GamingActivity(Activity):
         file_menu.addAction(self.save_as_action)
         file_menu.addAction(self.exit_action)
 
-        export_menu.addAction(self.export_rasters_action)
+        export_menu.addAction(self.export_chm_raster_action)
+        export_menu.addAction(self.export_basins_raster_action)
+        export_menu.addAction(self.export_clumpmap_raster_action)
         export_menu.addAction(self.export_georeferenced_raster_action)
         export_menu.addAction(self.export_features_action)
         export_menu.addAction(self.export_tif_action)

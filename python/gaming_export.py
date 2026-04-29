@@ -78,14 +78,43 @@ def export_georeferenced_raster(tabs: GamingTabs, parent: QWidget) -> None:
         _show_warning(parent, f"Could not export georeferenced raster image.\n\n{exc}")
 
 
-def export_raster(tabs: GamingTabs, parent: QWidget) -> None:
-    file_path = QFileDialog.getSaveFileName(parent, "Export raster data", "", "NumPy files (*.npy)")[0]
-    if not file_path:
-        return
-    output_path = Path(file_path)
-    if output_path.suffix.lower() != ".npy":
-        output_path = output_path.with_suffix(".npy")
-    np.save(output_path, tabs.current_raster_array())
+def export_chm_raster(tabs: GamingTabs, parent: QWidget) -> None:
+    _export_native_raster(
+        tabs,
+        parent,
+        title="Export CHM",
+        current_label="Current CHM",
+        treated_label="Treated CHM",
+        output_stem="current_chm",
+        treated_output_stem="treated_chm",
+        method_name="write_chm_raster",
+    )
+
+
+def export_basins_raster(tabs: GamingTabs, parent: QWidget) -> None:
+    _export_native_raster(
+        tabs,
+        parent,
+        title="Export Basins",
+        current_label="Current Basin Map",
+        treated_label="Treated Basin Map",
+        output_stem="current_basin",
+        treated_output_stem="treated_basin",
+        method_name="write_basin_raster",
+    )
+
+
+def export_clumpmap_raster(tabs: GamingTabs, parent: QWidget) -> None:
+    _export_native_raster(
+        tabs,
+        parent,
+        title="Export Clumpmap",
+        current_label="Current Clump Map",
+        treated_label="Treated Clump Map",
+        output_stem="current_clump",
+        treated_output_stem="treated_clump",
+        method_name="write_clumpmap_raster",
+    )
 
 
 def export_features(tabs: GamingTabs, parent: QWidget) -> None:
@@ -111,7 +140,7 @@ def _current_georeferenced_raster_option(tabs: GamingTabs) -> _GeoRasterOption:
     if raster_mode == 0:
         return _GeoRasterOption(
             "Treated CHM" if show_treatment else "Current CHM",
-            "treated_chm" if show_treatment else "current_chm",
+            "treated_chm_map" if show_treatment else "current_chm",
             "chm",
             "get_treat_chm" if show_treatment else "get_chm",
             "get_treat_hillshade" if show_treatment else "get_hillshade",
@@ -119,7 +148,7 @@ def _current_georeferenced_raster_option(tabs: GamingTabs) -> _GeoRasterOption:
     if raster_mode == 1:
         return _GeoRasterOption(
             "Treated Basin Map" if show_treatment else "Current Basin Map",
-            "treated_basin" if show_treatment else "current_basin",
+            "treated_basin_map" if show_treatment else "current_basin",
             "basin",
             "get_treat_basin" if show_treatment else "get_basin",
             "get_treat_hillshade" if show_treatment else "get_hillshade",
@@ -127,14 +156,14 @@ def _current_georeferenced_raster_option(tabs: GamingTabs) -> _GeoRasterOption:
     if raster_mode == 2:
         return _GeoRasterOption(
             "Treated Clump Map" if show_treatment else "Current Clump Map",
-            "treated_clump" if show_treatment else "current_clump",
+            "treated_clump_map" if show_treatment else "current_clump",
             "clump",
             "get_treat_clump_map" if show_treatment else "get_clump_map",
             "get_treat_hillshade" if show_treatment else "get_hillshade",
         )
     return _GeoRasterOption(
         "Treated Hillshade" if show_treatment else "Current Hillshade",
-        "treated_hillshade" if show_treatment else "current_hillshade",
+        "treated_hillshade_map" if show_treatment else "current_hillshade",
         "hillshade",
         "get_treat_hillshade" if show_treatment else "get_hillshade",
     )
@@ -238,6 +267,46 @@ def _export_points_csv(tabs: GamingTabs, parent: QWidget, title: str) -> None:
         writer = csv.writer(fp)
         writer.writerow(headers[: points.shape[1]])
         writer.writerows(points.tolist())
+
+
+def _export_native_raster(
+    tabs: GamingTabs,
+    parent: QWidget,
+    *,
+    title: str,
+    current_label: str,
+    treated_label: str,
+    output_stem: str,
+    treated_output_stem: str,
+    method_name: str,
+) -> None:
+    try:
+        unit = tabs.current_unit()
+    except (AttributeError, IndexError):
+        _show_warning(parent, "No unit is available to export.")
+        return
+
+    show_treatment = tabs.showing_treatment_view()
+    label = treated_label if show_treatment else current_label
+    selected_output_stem = treated_output_stem if show_treatment else output_stem
+    default_name = f"{_safe_output_name(getattr(unit, 'name', 'unit'))}_{selected_output_stem}.tif"
+    file_path = QFileDialog.getSaveFileName(parent, title, default_name, "TIFF files (*.tif *.tiff)")[0]
+    if not file_path:
+        return
+
+    output_path = Path(file_path)
+    if output_path.suffix.lower() not in {".tif", ".tiff"}:
+        output_path = output_path.with_suffix(".tif")
+
+    export_method = getattr(unit, method_name, None)
+    if export_method is None:
+        _show_warning(parent, f"Native export support for {label} is not available.")
+        return
+
+    try:
+        export_method(str(output_path), show_treatment)
+    except Exception as exc:
+        _show_warning(parent, f"Could not export {label.lower()}.\n\n{exc}")
 
 
 def _safe_output_name(name: str) -> str:

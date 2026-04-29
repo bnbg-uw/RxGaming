@@ -46,9 +46,21 @@ class FakeUnit:
     def __init__(self) -> None:
         self.name = "Demo Unit"
         self.calls: list[tuple[object, ...]] = []
+        self.chm_calls: list[tuple[object, ...]] = []
+        self.basin_calls: list[tuple[object, ...]] = []
+        self.clumpmap_calls: list[tuple[object, ...]] = []
 
     def export_rendered_geotiff(self, *args: object) -> None:
         self.calls.append(args)
+
+    def write_chm_raster(self, *args: object) -> None:
+        self.chm_calls.append(args)
+
+    def write_basin_raster(self, *args: object) -> None:
+        self.basin_calls.append(args)
+
+    def write_clumpmap_raster(self, *args: object) -> None:
+        self.clumpmap_calls.append(args)
 
 
 class FakeTabs:
@@ -159,6 +171,41 @@ class TestGamingExport(unittest.TestCase):
         gaming_export_module.export_georeferenced_raster(tabs, None)
 
         self.assertEqual([], unit.calls)
+
+    def test_export_chm_raster_uses_current_variant(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit, show_treatment=False)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("C:/tmp/chm_export", ""))
+
+        gaming_export_module.export_chm_raster(tabs, None)
+
+        self.assertEqual([("C:/tmp/chm_export.tif", False)], unit.chm_calls)
+
+    def test_export_basins_raster_uses_treated_variant(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit, show_treatment=True)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("C:/tmp/basin_export.tif", ""))
+
+        gaming_export_module.export_basins_raster(tabs, None)
+
+        self.assertEqual([("C:/tmp/basin_export.tif", True)], unit.basin_calls)
+
+    def test_export_clumpmap_raster_returns_when_save_dialog_is_cancelled(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit, show_treatment=True)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("", ""))
+
+        gaming_export_module.export_clumpmap_raster(tabs, None)
+
+        self.assertEqual([], unit.clumpmap_calls)
+
+    def test_export_native_raster_warns_when_no_unit_is_available(self) -> None:
+        warnings: list[str] = []
+        gaming_export_module._show_warning = lambda parent, text: warnings.append(text)
+
+        gaming_export_module.export_basins_raster(FakeTabs(None), None)
+
+        self.assertEqual(["No unit is available to export."], warnings)
 
 
 if __name__ == "__main__":
