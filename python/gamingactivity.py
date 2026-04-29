@@ -178,7 +178,7 @@ class GamingActivity(Activity):
         self.export_georeferenced_raster_action = QAction('&Export georeferenced raster image ("*.tif")', self.window)
         self.export_georeferenced_raster_action.triggered.connect(self.export_georeferenced_raster)
 
-        self.export_features_action = QAction('&Export point data ("*.csv")', self.window)
+        self.export_features_action = QAction('&Export point data ("*.shp")', self.window)
         self.export_features_action.triggered.connect(self.export_features)
 
         self.export_treelists_action = QAction('&Export treelists ("*.csv")', self.window)

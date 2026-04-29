@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import os
 import sys
 import types
@@ -47,12 +46,16 @@ class FakeUnit:
     def __init__(self) -> None:
         self.name = "Demo Unit"
         self.calls: list[tuple[object, ...]] = []
+        self.tao_shapefile_calls: list[tuple[object, ...]] = []
         self.chm_calls: list[tuple[object, ...]] = []
         self.basin_calls: list[tuple[object, ...]] = []
         self.clumpmap_calls: list[tuple[object, ...]] = []
 
     def export_rendered_geotiff(self, *args: object) -> None:
         self.calls.append(args)
+
+    def write_tao_shapefile(self, *args: object) -> None:
+        self.tao_shapefile_calls.append(args)
 
     def write_chm_raster(self, *args: object) -> None:
         self.chm_calls.append(args)
@@ -106,13 +109,11 @@ class TestGamingExport(unittest.TestCase):
 
     def setUp(self) -> None:
         self.original_get_save_file_name = gaming_export_module.QFileDialog.getSaveFileName
-        self.original_path_open = gaming_export_module.Path.open
         self.original_render = gaming_export_module._render_georeferenced_raster
         self.original_show_warning = gaming_export_module._show_warning
 
     def tearDown(self) -> None:
         gaming_export_module.QFileDialog.getSaveFileName = self.original_get_save_file_name
-        gaming_export_module.Path.open = self.original_path_open
         gaming_export_module._render_georeferenced_raster = self.original_render
         gaming_export_module._show_warning = self.original_show_warning
 
@@ -220,32 +221,71 @@ class TestGamingExport(unittest.TestCase):
 
         self.assertEqual(["No unit is available to export."], warnings)
 
-    def test_export_features_writes_headers_in_current_tao_order_with_dbh(self) -> None:
-        class _CaptureBuffer(io.StringIO):
-            def close(self) -> None:
-                pass
-
-        points = np.array(
-            [
-                [10.0, 20.0, 30.0, 4.5, 18.0],
-                [11.0, 21.0, 31.0, 4.0, 20.5],
-            ],
-            dtype=float,
-        )
-        tabs = FakeTabs(FakeUnit(), points=points)
-
-        output_path = ROOT / "python" / "tests" / "_tmp_points_export.csv"
-        capture_buffer = _CaptureBuffer()
-        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: (str(output_path), ""))
-        gaming_export_module.Path.open = lambda *args, **kwargs: capture_buffer
+    def test_export_features_calls_native_shapefile_export(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit, show_treatment=False)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("C:/tmp/point_export", ""))
 
         gaming_export_module.export_features(tabs, None)
 
-        lines = capture_buffer.getvalue().splitlines()
+        self.assertEqual([(str(Path("C:/tmp/point_export.shp")), False)], unit.tao_shapefile_calls)
 
-        self.assertEqual("x,y,height,radius,dbh", lines[0])
-        self.assertEqual("10.0,20.0,30.0,4.5,18.0", lines[1])
-        self.assertEqual("11.0,21.0,31.0,4.0,20.5", lines[2])
+    def test_export_features_uses_treated_variant_when_showing_treatment(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit, show_treatment=True)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("C:/tmp/treated_points.shp", ""))
+
+        gaming_export_module.export_features(tabs, None)
+
+        self.assertEqual([(str(Path("C:/tmp/treated_points.shp")), True)], unit.tao_shapefile_calls)
+
+    def test_export_features_returns_when_save_dialog_is_cancelled(self) -> None:
+        unit = FakeUnit()
+        tabs = FakeTabs(unit)
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("", ""))
+
+        gaming_export_module.export_features(tabs, None)
+
+        self.assertEqual([], unit.tao_shapefile_calls)
+
+    def test_export_features_warns_when_no_unit_is_available(self) -> None:
+        warnings: list[str] = []
+        gaming_export_module._show_warning = lambda parent, text: warnings.append(text)
+
+        gaming_export_module.export_features(FakeTabs(None), None)
+
+        self.assertEqual(["No unit is available to export."], warnings)
+
+    def test_export_features_warns_when_native_export_is_unavailable(self) -> None:
+        warnings: list[str] = []
+        gaming_export_module._show_warning = lambda parent, text: warnings.append(text)
+
+        class UnitWithoutNativeExport:
+            name = "Demo Unit"
+
+        tabs = FakeTabs(UnitWithoutNativeExport())
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("C:/tmp/point_export.shp", ""))
+
+        gaming_export_module.export_features(tabs, None)
+
+        self.assertEqual(["Native export support for point data is not available."], warnings)
+
+    def test_export_treelist_uses_default_filename_guess(self) -> None:
+        points = np.array([[10.0, 20.0]], dtype=float)
+        tabs = FakeTabs(FakeUnit(), points=points)
+        dialog_calls: list[tuple[object, ...]] = []
+
+        def fake_get_save_file_name(*args, **kwargs):
+            dialog_calls.append(args)
+            return ("", "")
+
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(fake_get_save_file_name)
+
+        gaming_export_module.export_treelist(tabs, None)
+
+        self.assertEqual(1, len(dialog_calls))
+        self.assertEqual("Export treelist", dialog_calls[0][1])
+        self.assertEqual("Demo_Unit_treelist.csv", dialog_calls[0][2])
 
 
 if __name__ == "__main__":

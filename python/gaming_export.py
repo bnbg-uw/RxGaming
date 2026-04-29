@@ -118,11 +118,34 @@ def export_clumpmap_raster(tabs: GamingTabs, parent: QWidget) -> None:
 
 
 def export_features(tabs: GamingTabs, parent: QWidget) -> None:
-    _export_points_csv(tabs, parent, "Export point data")
+    try:
+        unit = tabs.current_unit()
+    except (AttributeError, IndexError):
+        _show_warning(parent, "No unit is available to export.")
+        return
+
+    default_name = f"{_safe_output_name(getattr(unit, 'name', 'unit'))}_points.shp"
+    file_path = QFileDialog.getSaveFileName(parent, "Export point data", default_name, "ESRI Shapefile (*.shp)")[0]
+    if not file_path:
+        return
+
+    output_path = Path(file_path)
+    if output_path.suffix.lower() != ".shp":
+        output_path = output_path.with_suffix(".shp")
+
+    export_method = getattr(unit, "write_tao_shapefile", None)
+    if export_method is None:
+        _show_warning(parent, "Native export support for point data is not available.")
+        return
+
+    try:
+        export_method(str(output_path), tabs.showing_treatment_view())
+    except Exception as exc:
+        _show_warning(parent, f"Could not export point data.\n\n{exc}")
 
 
 def export_treelist(tabs: GamingTabs, parent: QWidget) -> None:
-    _export_points_csv(tabs, parent, "Export treelist")
+    _export_points_csv(tabs, parent, "Export treelist", output_stem="treelist")
 
 
 @dataclass(frozen=True)
@@ -248,8 +271,16 @@ def _render_georeferenced_raster(unit: object, option: _GeoRasterOption, unit_sy
     )
 
 
-def _export_points_csv(tabs: GamingTabs, parent: QWidget, title: str) -> None:
-    file_path = QFileDialog.getSaveFileName(parent, title, "", "CSV files (*.csv)")[0]
+def _export_points_csv(tabs: GamingTabs, parent: QWidget, title: str, output_stem: str = "points") -> None:
+    default_name = ""
+    try:
+        unit = tabs.current_unit()
+    except (AttributeError, IndexError):
+        unit = None
+    if unit is not None:
+        default_name = f"{_safe_output_name(getattr(unit, 'name', 'unit'))}_{output_stem}.csv"
+
+    file_path = QFileDialog.getSaveFileName(parent, title, default_name, "CSV files (*.csv)")[0]
     if not file_path:
         return
 
