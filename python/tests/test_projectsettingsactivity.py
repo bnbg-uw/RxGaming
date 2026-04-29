@@ -338,6 +338,7 @@ class TestGamingActivity(unittest.TestCase):
         self.original_project_area = gamingactivity_module.ProjectArea
         self.original_tabs = gamingactivity_module.GamingTabs
         self.original_persistence = gamingactivity_module.ProjectSnapshotSessionPersistence
+        self.original_export_georeferenced_raster = gamingactivity_module.export_georeferenced_raster
         self.original_notify_success = gamingactivity_module.GamingActivity._notify_save_success
         self.original_notify_failure = gamingactivity_module.GamingActivity._notify_save_failure
         self.original_question = qt_widgets.QMessageBox.question
@@ -347,6 +348,7 @@ class TestGamingActivity(unittest.TestCase):
         gamingactivity_module.ProjectArea = self.original_project_area
         gamingactivity_module.GamingTabs = self.original_tabs
         gamingactivity_module.ProjectSnapshotSessionPersistence = self.original_persistence
+        gamingactivity_module.export_georeferenced_raster = self.original_export_georeferenced_raster
         gamingactivity_module.GamingActivity._notify_save_success = self.original_notify_success
         gamingactivity_module.GamingActivity._notify_save_failure = self.original_notify_failure
         qt_widgets.QMessageBox.question = self.original_question
@@ -504,3 +506,49 @@ class TestGamingActivity(unittest.TestCase):
                 self.assertEqual([str(project_root)], save_calls)
             finally:
                 qt_widgets.QFileDialog.getExistingDirectory = original_get_existing_directory
+
+    def test_georeferenced_raster_export_action_is_available(self) -> None:
+        class FakeProjectSettings:
+            def __init__(self) -> None:
+                self.name = "Demo"
+                self.unitPolyPath = "units.shp"
+                self.refDataPath = ""
+                self.mcsPropPath = "props.csv"
+                self.fiaPath = "fia.csv"
+                self.lidarPath = "lidar"
+                self.unitName = "NAME"
+                self.savePath = ""
+                self.nThread = 2
+
+        class FakeProjectArea:
+            pass
+
+        class FakeSessionState:
+            def to_dict(self) -> dict[str, object]:
+                return {}
+
+        class FakeTabs(projectsettingsactivity_module.QTextBrowser):
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                super().__init__()
+                self.session_state = FakeSessionState()
+
+        triggered: list[object] = []
+
+        gamingactivity_module.ProjectSettings = FakeProjectSettings
+        gamingactivity_module.ProjectArea = FakeProjectArea
+        gamingactivity_module.GamingTabs = FakeTabs
+        gamingactivity_module.export_georeferenced_raster = lambda tabs, window: triggered.append((tabs, window))
+
+        activity = gamingactivity_module.GamingActivity(None, gamingactivity_module.WindowMode.SimultaneousParent)
+        activity.on_start(
+            {
+                "ProjectSettings": FakeProjectSettings(),
+                "ProjectArea": FakeProjectArea(),
+                "ProjectSettingsForm": {"project_name": "Demo"},
+                "SessionState": {},
+            }
+        )
+
+        self.assertEqual('&Export georeferenced raster image ("*.tif")', activity.export_georeferenced_raster_action.text())
+        activity.export_georeferenced_raster()
+        self.assertEqual(1, len(triggered))

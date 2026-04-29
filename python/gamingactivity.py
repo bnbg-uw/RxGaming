@@ -11,7 +11,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 
 from activity import Activity
-from gaming_export import export_current_view, export_features, export_raster, export_treelist
+from gaming_export import export_current_view, export_features, export_georeferenced_raster, export_raster, export_treelist
 from gaming_ui import GamingTabs
 from persistence import ProjectSnapshotSessionPersistence
 from rxgaming_core import ProjectArea, ProjectSettings
@@ -110,6 +110,9 @@ class GamingActivity(Activity):
     def export_rasters(self) -> None:
         export_raster(self.tab_widget, self.window)
 
+    def export_georeferenced_raster(self) -> None:
+        export_georeferenced_raster(self.tab_widget, self.window)
+
     def export_features(self) -> None:
         export_features(self.tab_widget, self.window)
 
@@ -152,6 +155,9 @@ class GamingActivity(Activity):
         self.export_rasters_action = QAction('&Export raster data ("*.npy")', self.window)
         self.export_rasters_action.triggered.connect(self.export_rasters)
 
+        self.export_georeferenced_raster_action = QAction('&Export georeferenced raster image ("*.tif")', self.window)
+        self.export_georeferenced_raster_action.triggered.connect(self.export_georeferenced_raster)
+
         self.export_features_action = QAction('&Export point data ("*.csv")', self.window)
         self.export_features_action.triggered.connect(self.export_features)
 
@@ -172,6 +178,7 @@ class GamingActivity(Activity):
         file_menu.addAction(self.exit_action)
 
         export_menu.addAction(self.export_rasters_action)
+        export_menu.addAction(self.export_georeferenced_raster_action)
         export_menu.addAction(self.export_features_action)
         export_menu.addAction(self.export_tif_action)
         export_menu.addAction(self.export_treelists_action)

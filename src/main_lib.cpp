@@ -116,6 +116,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def("get_treat_clump_sizes", &rxgaming::RxGamingRxUnit::get_treat_clump_sizes)
         
         .def("get_cut_taos", &rxgaming::RxGamingRxUnit::get_cut_taos)
+        .def("export_rendered_geotiff", &rxgaming::RxGamingRxUnit::export_rendered_geotiff)
 
         .def("get_simulated_structures", &rxgaming::RxGamingRxUnit::get_simulated_structures);
 

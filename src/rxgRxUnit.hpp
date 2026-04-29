@@ -50,6 +50,15 @@ namespace rxgaming {
 
         py::array_t<double> get_cut_taos() const;
 
+        void export_rendered_geotiff(
+            const std::string& outputPath,
+            const py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>& image,
+            int mapLeftPx,
+            int mapTopPx,
+            int mapWidthPx,
+            int mapHeightPx
+        ) const;
+
         std::vector<rxtools::StructureSummary> get_simulated_structures(double bbDbh) const;
         void refresh_derived_state();
 

@@ -167,6 +167,113 @@ namespace rxgaming {
         return taolist_to_numpy(cutTaos);
     }
 
+    void RxGamingRxUnit::export_rendered_geotiff(
+        const std::string& outputPath,
+        const py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>& image,
+        int mapLeftPx,
+        int mapTopPx,
+        int mapWidthPx,
+        int mapHeightPx
+    ) const {
+        auto buffer = image.request();
+        if (buffer.ndim != 3) {
+            throw std::runtime_error("Rendered export image must be a 3D uint8 array.");
+        }
+        const auto imageHeightShape = buffer.shape[0];
+        const auto imageWidthShape = buffer.shape[1];
+        const auto channelCountShape = buffer.shape[2];
+        if (channelCountShape != 3 && channelCountShape != 4) {
+            throw std::runtime_error("Rendered export image must have 3 or 4 channels.");
+        }
+        if (imageHeightShape <= 0 || imageWidthShape <= 0) {
+            throw std::runtime_error("Rendered export image dimensions must be positive.");
+        }
+        if (mapWidthPx <= 0 || mapHeightPx <= 0) {
+            throw std::runtime_error("Rendered export map bounds must be positive.");
+        }
+        if (mapLeftPx < 0 || mapTopPx < 0) {
+            throw std::runtime_error("Rendered export map bounds must be non-negative.");
+        }
+        const auto imageWidth = static_cast<int>(imageWidthShape);
+        const auto imageHeight = static_cast<int>(imageHeightShape);
+        const auto channelCount = static_cast<int>(channelCountShape);
+        if (mapLeftPx + mapWidthPx > imageWidth || mapTopPx + mapHeightPx > imageHeight) {
+            throw std::runtime_error("Rendered export map bounds exceeded the rendered image extent.");
+        }
+        const auto* basePointer = static_cast<std::uint8_t*>(buffer.ptr);
+        const auto& alignment = static_cast<const lapis::Alignment&>(chm);
+
+        const double pixelWidth = (alignment.xmax() - alignment.xmin()) / static_cast<double>(mapWidthPx);
+        const double pixelHeight = -(alignment.ymax() - alignment.ymin()) / static_cast<double>(mapHeightPx);
+        std::array<double, 6> geotransform{
+            alignment.xmin() - static_cast<double>(mapLeftPx) * pixelWidth,
+            pixelWidth,
+            0.0,
+            alignment.ymax() - static_cast<double>(mapTopPx) * pixelHeight,
+            0.0,
+            pixelHeight,
+        };
+
+        lapis::gdalAllRegisterThreadSafe();
+        GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+        if (driver == nullptr) {
+            throw std::runtime_error("Could not acquire the GTiff GDAL driver.");
+        }
+
+        std::unique_ptr<GDALDataset, decltype(&GDALClose)> dataset(
+            driver->Create(outputPath.c_str(), imageWidth, imageHeight, channelCount, GDT_Byte, nullptr),
+            GDALClose
+        );
+        if (!dataset) {
+            throw std::runtime_error("Could not create GeoTIFF dataset at " + outputPath);
+        }
+
+        if (dataset->SetGeoTransform(geotransform.data()) != CE_None) {
+            throw std::runtime_error("Could not set GeoTIFF geotransform for " + outputPath);
+        }
+
+        const std::string projectionWkt = alignment.crs().getCompleteWKT();
+        if (dataset->SetProjection(projectionWkt.c_str()) != CE_None) {
+            throw std::runtime_error("Could not set GeoTIFF projection for " + outputPath);
+        }
+
+        static const GDALColorInterp colorInterpretations[4] = {
+            GCI_RedBand,
+            GCI_GreenBand,
+            GCI_BlueBand,
+            GCI_AlphaBand,
+        };
+
+        for (int channelIndex = 0; channelIndex < channelCount; ++channelIndex) {
+            GDALRasterBand* band = dataset->GetRasterBand(channelIndex + 1);
+            if (band == nullptr) {
+                throw std::runtime_error("Could not open GeoTIFF raster band for " + outputPath);
+            }
+            band->SetColorInterpretation(colorInterpretations[channelIndex]);
+
+            const auto pixelSpace = static_cast<GSpacing>(buffer.strides[1]);
+            const auto lineSpace = static_cast<GSpacing>(buffer.strides[0]);
+            auto* channelPointer = const_cast<std::uint8_t*>(basePointer + static_cast<size_t>(channelIndex) * static_cast<size_t>(buffer.strides[2]));
+            if (band->RasterIO(
+                GF_Write,
+                0,
+                0,
+                imageWidth,
+                imageHeight,
+                channelPointer,
+                imageWidth,
+                imageHeight,
+                GDT_Byte,
+                pixelSpace,
+                lineSpace
+            ) != CE_None) {
+                throw std::runtime_error("Could not write GeoTIFF raster band for " + outputPath);
+            }
+        }
+
+        dataset->FlushCache();
+    }
+
     std::vector<rxtools::StructureSummary> RxGamingRxUnit::get_simulated_structures(double bbDbh) const {
         try {
             auto align = lapis::Alignment((lapis::Extent)unitMask, 1, 1);
@@ -256,6 +363,10 @@ namespace rxgaming {
             std::abort();
         }
     }
+
+    void RxGamingRxUnit::refresh_derived_state() {
+        hillshade = computeHillshade(chm);
+    }
         
     py::array_t<double> RxGamingRxUnit::taolist_to_numpy(rxtools::TaoList taos) const {
         py::array_t<double> arr({(py::ssize_t)taos.size(), (py::ssize_t)5});
@@ -337,9 +448,5 @@ namespace rxgaming {
         }
 
         return thisBasin;
-    }
-
-    void RxGamingRxUnit::refresh_derived_state() {
-        hillshade = computeHillshade(chm);
     }
 }
