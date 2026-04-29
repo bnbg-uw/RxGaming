@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import sys
 import types
@@ -64,10 +65,17 @@ class FakeUnit:
 
 
 class FakeTabs:
-    def __init__(self, unit: FakeUnit | None, raster_mode: int = 0, show_treatment: bool = False) -> None:
+    def __init__(
+        self,
+        unit: FakeUnit | None,
+        raster_mode: int = 0,
+        show_treatment: bool = False,
+        points: np.ndarray | None = None,
+    ) -> None:
         self._unit = unit
         self._raster_mode = raster_mode
         self._show_treatment = show_treatment
+        self._points = np.asarray(points) if points is not None else np.zeros((0, 0), dtype=float)
 
     def current_unit(self) -> FakeUnit:
         if self._unit is None:
@@ -83,6 +91,9 @@ class FakeTabs:
     def showing_treatment_view(self) -> bool:
         return self._show_treatment
 
+    def current_points(self) -> np.ndarray:
+        return self._points
+
     def currentIndex(self) -> int:
         return 1
 
@@ -95,11 +106,13 @@ class TestGamingExport(unittest.TestCase):
 
     def setUp(self) -> None:
         self.original_get_save_file_name = gaming_export_module.QFileDialog.getSaveFileName
+        self.original_path_open = gaming_export_module.Path.open
         self.original_render = gaming_export_module._render_georeferenced_raster
         self.original_show_warning = gaming_export_module._show_warning
 
     def tearDown(self) -> None:
         gaming_export_module.QFileDialog.getSaveFileName = self.original_get_save_file_name
+        gaming_export_module.Path.open = self.original_path_open
         gaming_export_module._render_georeferenced_raster = self.original_render
         gaming_export_module._show_warning = self.original_show_warning
 
@@ -129,7 +142,7 @@ class TestGamingExport(unittest.TestCase):
         self.assertEqual("Treated Basin Map", render_calls[0][1].label)
         self.assertEqual(1, len(unit.calls))
         args = unit.calls[0]
-        self.assertEqual("C:/tmp/exported_raster.tif", args[0])
+        self.assertEqual(Path("C:/tmp/exported_raster.tif"), Path(args[0]))
         self.assertEqual((12, 10, 4), args[1].shape)
         self.assertEqual((1, 2, 7, 8), args[2:])
 
@@ -151,7 +164,7 @@ class TestGamingExport(unittest.TestCase):
 
         self.assertEqual(1, len(unit.calls))
         args = unit.calls[0]
-        self.assertEqual("C:/tmp/clump.tif", args[0])
+        self.assertEqual(Path("C:/tmp/clump.tif"), Path(args[0]))
         self.assertEqual((6, 5, 4), args[1].shape)
         self.assertEqual((0, 0, 5, 6), args[2:])
 
@@ -179,7 +192,7 @@ class TestGamingExport(unittest.TestCase):
 
         gaming_export_module.export_chm_raster(tabs, None)
 
-        self.assertEqual([("C:/tmp/chm_export.tif", False)], unit.chm_calls)
+        self.assertEqual([(str(Path("C:/tmp/chm_export.tif")), False)], unit.chm_calls)
 
     def test_export_basins_raster_uses_treated_variant(self) -> None:
         unit = FakeUnit()
@@ -188,7 +201,7 @@ class TestGamingExport(unittest.TestCase):
 
         gaming_export_module.export_basins_raster(tabs, None)
 
-        self.assertEqual([("C:/tmp/basin_export.tif", True)], unit.basin_calls)
+        self.assertEqual([(str(Path("C:/tmp/basin_export.tif")), True)], unit.basin_calls)
 
     def test_export_clumpmap_raster_returns_when_save_dialog_is_cancelled(self) -> None:
         unit = FakeUnit()
@@ -206,6 +219,33 @@ class TestGamingExport(unittest.TestCase):
         gaming_export_module.export_basins_raster(FakeTabs(None), None)
 
         self.assertEqual(["No unit is available to export."], warnings)
+
+    def test_export_features_writes_headers_in_current_tao_order_with_dbh(self) -> None:
+        class _CaptureBuffer(io.StringIO):
+            def close(self) -> None:
+                pass
+
+        points = np.array(
+            [
+                [10.0, 20.0, 30.0, 4.5, 18.0],
+                [11.0, 21.0, 31.0, 4.0, 20.5],
+            ],
+            dtype=float,
+        )
+        tabs = FakeTabs(FakeUnit(), points=points)
+
+        output_path = ROOT / "python" / "tests" / "_tmp_points_export.csv"
+        capture_buffer = _CaptureBuffer()
+        gaming_export_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: (str(output_path), ""))
+        gaming_export_module.Path.open = lambda *args, **kwargs: capture_buffer
+
+        gaming_export_module.export_features(tabs, None)
+
+        lines = capture_buffer.getvalue().splitlines()
+
+        self.assertEqual("x,y,height,radius,dbh", lines[0])
+        self.assertEqual("10.0,20.0,30.0,4.5,18.0", lines[1])
+        self.assertEqual("11.0,21.0,31.0,4.0,20.5", lines[2])
 
 
 if __name__ == "__main__":

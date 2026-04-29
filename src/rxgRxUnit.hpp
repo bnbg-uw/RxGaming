@@ -58,6 +58,7 @@ namespace rxgaming {
             int mapWidthPx,
             int mapHeightPx
         ) const;
+        void write_tao_shapefile(const std::string& outputPath, bool treated) const;
         void write_chm_raster(const std::string& outputPath, bool treated) const;
         void write_basin_raster(const std::string& outputPath, bool treated) const;
         void write_clumpmap_raster(const std::string& outputPath, bool treated) const;

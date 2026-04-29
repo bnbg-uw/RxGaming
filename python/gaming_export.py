@@ -262,11 +262,23 @@ def _export_points_csv(tabs: GamingTabs, parent: QWidget, title: str) -> None:
         _show_warning(parent, "No point data is available to export.")
         return
 
-    headers = ["x", "y", "area", "height", "crown", "dbh"]
+    headers = _point_csv_headers(points.shape[1])
     with output_path.open("w", newline="", encoding="utf-8") as fp:
         writer = csv.writer(fp)
-        writer.writerow(headers[: points.shape[1]])
+        writer.writerow(headers)
         writer.writerows(points.tolist())
+
+
+def _point_csv_headers(column_count: int) -> list[str]:
+    if column_count == 2:
+        return ["x", "y"]
+    if column_count == 4:
+        return ["x", "y", "height", "radius"]
+    if column_count == 5:
+        return ["x", "y", "height", "radius", "dbh"]
+    if column_count == 6:
+        return ["x", "y", "area", "height", "radius", "dbh"]
+    return [f"column_{index + 1}" for index in range(column_count)]
 
 
 def _export_native_raster(

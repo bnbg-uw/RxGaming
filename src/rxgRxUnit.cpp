@@ -212,6 +212,11 @@ namespace rxgaming {
         dataset->FlushCache();
     }
 
+    void RxGamingRxUnit::write_tao_shapefile(const std::string& outputPath, bool treated) const {
+        const auto& taoSet = treated ? treatedTaos : taos;
+        taoSet.writeShapefile(outputPath);
+    }
+
     void RxGamingRxUnit::write_chm_raster(const std::string& outputPath, bool treated) const {
         auto raster = treated ? getTreatChmRaster() : chm;
         raster.writeRaster(outputPath);

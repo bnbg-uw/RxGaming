@@ -117,6 +117,7 @@ PYBIND11_MODULE(rxgaming_core, m) {
         
         .def("get_cut_taos", &rxgaming::RxGamingRxUnit::get_cut_taos)
         .def("export_rendered_geotiff", &rxgaming::RxGamingRxUnit::export_rendered_geotiff)
+        .def("write_tao_shapefile", &rxgaming::RxGamingRxUnit::write_tao_shapefile)
         .def("write_chm_raster", &rxgaming::RxGamingRxUnit::write_chm_raster)
         .def("write_basin_raster", &rxgaming::RxGamingRxUnit::write_basin_raster)
         .def("write_clumpmap_raster", &rxgaming::RxGamingRxUnit::write_clumpmap_raster)
