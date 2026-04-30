@@ -20,7 +20,7 @@ from gaming_export import (
     export_georeferenced_raster,
     export_treelist,
 )
-from gaming_ui import GamingTabs
+from gaming_ui.tabs import GamingTabs
 from persistence import ProjectSnapshotSessionPersistence
 from rxgaming_core import ProjectArea, ProjectSettings
 from widgets import QMainWindowRx

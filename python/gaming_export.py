@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 import numpy as np
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
-from gaming_ui import GamingTabs
+from gaming_ui.tabs import GamingTabs
 from gaming_ui.units import UnitSystem, array_to_display, display_name_for
 
 
