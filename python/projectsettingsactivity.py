@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import traceback
-from typing import Any, Optional
+from typing import Any
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
@@ -34,17 +34,16 @@ from PySide6.QtWidgets import (
 from activity import Activity, SavedState, WindowMode
 from gamingactivity import GamingActivity
 from persistence import build_form_state, write_project_settings_file
-from rxgaming_core import ProjectArea, ProjectSettings
+from rxgaming_core import (
+    ProjectArea,
+    ProjectSettings,
+    finish_project_area_build,
+    poll_project_area_build,
+    start_project_area_build,
+)
 from widgets import QFileSelectionLineEdit
 
-PROGRESS_UI_UPDATE_INTERVAL = 25
-
-try:
-    from rxgaming_core import build_project_area_with_progress
-except ImportError:
-    def build_project_area_with_progress(ps: ProjectSettings, callback: Any = None) -> ProjectArea:
-        del callback
-        return ProjectArea(ps)
+PROGRESS_POLL_INTERVAL_MS = 100
 
 
 class ProjectSettingsActivity(Activity):
@@ -54,11 +53,12 @@ class ProjectSettingsActivity(Activity):
         self.save_file_location = ""
         self.prop_table_path = kwargs["prop_table_path"]
         self.fia_path = kwargs["fia_path"]
-        self.worker_thread = None
         self.worker = None
         self._closed = False
-        self._pending_worker_result = None
-        self._worker_finished = False
+        self._last_progress_line = ""
+        self._progress_timer = QTimer(self.window)
+        self._progress_timer.setInterval(PROGRESS_POLL_INTERVAL_MS)
+        self._progress_timer.timeout.connect(self._poll_worker_progress)
 
         assert isinstance(self.prop_table_path, str)
         assert isinstance(self.fia_path, str)
@@ -163,10 +163,8 @@ class ProjectSettingsActivity(Activity):
         self.text_output.clear()
         self._append_progress("Processing started:")
         self.start_button.setEnabled(False)
-        self._pending_worker_result = None
-        self._worker_finished = False
+        self._last_progress_line = ""
 
-        self.worker_thread = QThread()
         self.worker = ProjectBuildWorker(
             self.prj_name_edit.text(),
             str(unit_poly_path),
@@ -178,15 +176,15 @@ class ProjectSettingsActivity(Activity):
             self.auto_save_line_edit.text() if self.auto_save_checkbox.isChecked() else "",
             self.threads_edit.value(),
         )
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.progress_message.connect(self._append_progress)
-        self.worker.finished.connect(self._handle_worker_result)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
-        self.worker_thread.finished.connect(self._handle_worker_thread_finished)
-        self.worker_thread.start()
+        try:
+            self.worker.start()
+        except Exception as exc:
+            self.start_button.setEnabled(True)
+            message = "{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc())
+            self.notify_exception(message)
+            self.worker = None
+            return
+        self._progress_timer.start()
 
     def start_gamingactivity(self, result: Any) -> None:
         if not isinstance(result, dict):
@@ -258,52 +256,80 @@ class ProjectSettingsActivity(Activity):
         self.text_output.insertPlainText(text)
         self.text_output.ensureCursorVisible()
 
-    @Slot(object)
-    def _handle_worker_result(self, result: Any) -> None:
-        self._pending_worker_result = result
-        self._worker_finished = True
-        if self.worker_thread is None or not self.worker_thread.isRunning():
-            self._finalize_worker_result()
-
     @Slot()
-    def _handle_worker_thread_finished(self) -> None:
-        self._clear_worker_references()
-        if self._worker_finished:
-            self._finalize_worker_result()
+    def _poll_worker_progress(self) -> None:
+        if self._closed or self.worker is None:
+            return
+        try:
+            snapshot = self.worker.poll_snapshot()
+        except Exception as exc:
+            self._stop_progress_timer()
+            self.start_button.setEnabled(True)
+            self._dispose_worker()
+            self.notify_exception("{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc()))
+            return
 
-    def _finalize_worker_result(self) -> None:
+        rendered_line = self._render_progress_snapshot(snapshot)
+        if rendered_line and rendered_line != self._last_progress_line:
+            self._append_progress(rendered_line)
+            self._last_progress_line = rendered_line
+
+        status = str(getattr(snapshot, "status", ""))
+        if status not in {"succeeded", "failed"}:
+            return
+
+        self._stop_progress_timer()
+        worker = self.worker
+        assert worker is not None
+        try:
+            project_area = worker.finalize()
+            project_settings = worker.project_settings
+            if project_settings is None or not isinstance(project_area, ProjectArea):
+                raise TypeError("Project build did not return a valid ProjectSettings and ProjectArea.")
+        except Exception as exc:
+            self.start_button.setEnabled(True)
+            self._dispose_worker()
+            self.notify_exception("{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc()))
+            return
+
         self.start_button.setEnabled(True)
-        if self._closed:
-            return
+        self._append_progress("Project area ready.")
+        result = {
+            "project_settings": project_settings,
+            "project_area": project_area,
+        }
+        self._dispose_worker()
+        self.start_gamingactivity(result)
 
-        result = self._pending_worker_result
-        self._pending_worker_result = None
-        self._worker_finished = False
+    def _render_progress_snapshot(self, snapshot: Any) -> str:
+        message = str(getattr(snapshot, "message", "") or getattr(snapshot, "error", ""))
+        completed = getattr(snapshot, "completed", -1)
+        total = getattr(snapshot, "total", -1)
 
-        if isinstance(result, dict):
-            self._append_progress("Project area ready.")
-            self.start_gamingactivity(result)
-            return
+        if isinstance(completed, int) and isinstance(total, int) and total > 0 and completed >= 0:
+            suffix = f"[{completed}/{total}]"
+            if message:
+                if suffix not in message:
+                    return f"{message} {suffix}"
+                return message
+            return f"Progress {suffix}"
 
-        self.notify_exception(str(result))
+        return message
 
-    @Slot()
-    def _clear_worker_references(self) -> None:
-        self.worker_thread = None
+    def _stop_progress_timer(self) -> None:
+        if self._progress_timer.isActive():
+            self._progress_timer.stop()
+
+    def _dispose_worker(self) -> None:
+        worker = self.worker
         self.worker = None
-
-    def _shutdown_worker(self) -> None:
-        thread = self.worker_thread
-        if thread is None:
-            return
-        if thread.isRunning():
-            thread.quit()
-            thread.wait(5000)
-        self._clear_worker_references()
+        if worker is not None:
+            worker.dispose()
 
     def _on_window_close(self, window: Any) -> None:
         self._closed = True
-        self._shutdown_worker()
+        self._stop_progress_timer()
+        self._dispose_worker()
         super()._on_window_close(window)
 
     @staticmethod
@@ -359,10 +385,7 @@ class ProjectSettingsActivity(Activity):
         return Path.cwd() / "settings.json"
 
 
-class ProjectBuildWorker(QObject):
-    progress_message = Signal(str)
-    finished = Signal(object)
-
+class ProjectBuildWorker:
     def __init__(
         self,
         prj_name: str,
@@ -374,10 +397,7 @@ class ProjectBuildWorker(QObject):
         unit_name: str,
         save_path: str,
         threads: int,
-        *args: Any,
-        **kwargs: Any
     ):
-        QObject.__init__(self, *args, **kwargs)
         self.prj_name = prj_name
         self.unit = unit
         self.ref = ref
@@ -387,53 +407,32 @@ class ProjectBuildWorker(QObject):
         self.unit_name = unit_name
         self.save_path = save_path
         self.threads = threads
+        self.handle = None
+        self.project_settings: ProjectSettings | None = None
 
-    @staticmethod
-    def _format_progress_update(event: Any) -> str:
-        stage = str(getattr(event, "stage", ""))
-        message = str(getattr(event, "message", ""))
-        completed = getattr(event, "completed", -1)
-        total = getattr(event, "total", -1)
+    def start(self) -> None:
+        self.project_settings = ProjectSettings(
+            self.prj_name,
+            self.unit,
+            self.ref,
+            self.prop_table,
+            self.fia,
+            self.lidar,
+            self.unit_name,
+            self.save_path,
+            self.threads,
+        )
+        self.handle = start_project_area_build(self.project_settings)
 
-        if stage == "unit_start":
-            return ""
+    def poll_snapshot(self) -> Any:
+        if self.handle is None:
+            raise RuntimeError("No project build is currently running.")
+        return poll_project_area_build(self.handle)
 
-        if stage in {"unit_complete", "unit_skipped"} and isinstance(completed, int) and isinstance(total, int):
-            if completed <= 0 or total <= 0:
-                return ""
-            if completed != total and completed % PROGRESS_UI_UPDATE_INTERVAL != 0:
-                return ""
-            return f"{message} [{completed}/{total}]"
+    def finalize(self) -> ProjectArea:
+        if self.handle is None:
+            raise RuntimeError("No project build is currently running.")
+        return finish_project_area_build(self.handle)
 
-        return message
-
-    @Slot()
-    def run(self) -> None:
-        try:
-            project_settings = ProjectSettings(
-                self.prj_name,
-                self.unit,
-                self.ref,
-                self.prop_table,
-                self.fia,
-                self.lidar,
-                self.unit_name,
-                self.save_path,
-                self.threads,
-            )
-
-            def on_progress(event: Any) -> None:
-                message = self._format_progress_update(event)
-                if message:
-                    self.progress_message.emit(message)
-
-            project_area = build_project_area_with_progress(project_settings, None)
-            self.finished.emit(
-                {
-                    "project_settings": project_settings,
-                    "project_area": project_area,
-                }
-            )
-        except Exception as exc:
-            message = "{0}\n\nDebugging Traceback:\n{1}".format(exc, traceback.format_exc())
-            self.finished.emit(message)
+    def dispose(self) -> None:
+        self.handle = None

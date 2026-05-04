@@ -13,7 +13,9 @@ IntArray = npt.NDArray[np.integer]
 
 def set_proj_db_path(path: str) -> None: ...
 def set_seed(seed: int) -> None: ...
-def build_project_area_with_progress(ps: ProjectSettings, callback: object = ...) -> ProjectArea: ...
+def start_project_area_build(ps: ProjectSettings) -> ProjectAreaBuildHandle: ...
+def poll_project_area_build(handle: ProjectAreaBuildHandle) -> ProjectAreaBuildSnapshot: ...
+def finish_project_area_build(handle: ProjectAreaBuildHandle) -> ProjectArea: ...
 def save_project_area(projectArea: ProjectArea, path: str) -> None: ...
 def load_project_area(path: str) -> ProjectArea: ...
 
@@ -43,6 +45,19 @@ class ProgressEvent:
     unitName: str
     completed: int
     total: int
+
+
+class ProjectAreaBuildSnapshot:
+    stage: str
+    message: str
+    completed: int
+    total: int
+    status: str
+    error: str
+
+
+class ProjectAreaBuildHandle:
+    ...
 
 
 class ProjectSettings:

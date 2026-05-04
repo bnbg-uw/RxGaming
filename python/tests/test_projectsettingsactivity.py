@@ -47,6 +47,21 @@ except ImportError:
     rx_stub.ProjectSettings = StubProjectSettings
     rx_stub.ProjectArea = StubProjectArea
     rx_stub.RxUnit = object
+    rx_stub.ProjectAreaBuildHandle = object
+
+    class StubProjectAreaBuildSnapshot:
+        def __init__(self) -> None:
+            self.stage = ""
+            self.message = ""
+            self.completed = -1
+            self.total = -1
+            self.status = "running"
+            self.error = ""
+
+    rx_stub.ProjectAreaBuildSnapshot = StubProjectAreaBuildSnapshot
+    rx_stub.start_project_area_build = lambda ps: object()
+    rx_stub.poll_project_area_build = lambda handle: StubProjectAreaBuildSnapshot()
+    rx_stub.finish_project_area_build = lambda handle: StubProjectArea()
     rx_stub.load_project_area = lambda path: object()
     rx_stub.save_project_area = lambda project_area, path: Path(path).write_bytes(b"stub")
     sys.modules["rxgaming_core"] = rx_stub
@@ -89,7 +104,9 @@ class TestProjectSettingsActivity(unittest.TestCase):
     def setUp(self) -> None:
         self.original_project_settings = projectsettingsactivity_module.ProjectSettings
         self.original_project_area = projectsettingsactivity_module.ProjectArea
-        self.original_build_project_area = projectsettingsactivity_module.build_project_area_with_progress
+        self.original_start_project_area_build = projectsettingsactivity_module.start_project_area_build
+        self.original_poll_project_area_build = projectsettingsactivity_module.poll_project_area_build
+        self.original_finish_project_area_build = projectsettingsactivity_module.finish_project_area_build
         self.original_start_activity = activity_module.Activity.start_activity
         self.original_notify_exception = projectsettingsactivity_module.ProjectSettingsActivity.notify_exception
         self.original_get_save_file_name = qt_widgets.QFileDialog.getSaveFileName
@@ -97,12 +114,82 @@ class TestProjectSettingsActivity(unittest.TestCase):
     def tearDown(self) -> None:
         projectsettingsactivity_module.ProjectSettings = self.original_project_settings
         projectsettingsactivity_module.ProjectArea = self.original_project_area
-        projectsettingsactivity_module.build_project_area_with_progress = self.original_build_project_area
+        projectsettingsactivity_module.start_project_area_build = self.original_start_project_area_build
+        projectsettingsactivity_module.poll_project_area_build = self.original_poll_project_area_build
+        projectsettingsactivity_module.finish_project_area_build = self.original_finish_project_area_build
         activity_module.Activity.start_activity = self.original_start_activity
         projectsettingsactivity_module.ProjectSettingsActivity.notify_exception = self.original_notify_exception
         qt_widgets.QFileDialog.getSaveFileName = self.original_get_save_file_name
 
-    def test_streaming_updates_text_box_before_worker_finishes(self) -> None:
+    class FakeBuildSnapshot:
+        def __init__(
+            self,
+            *,
+            stage: str = "",
+            message: str = "",
+            completed: int = -1,
+            total: int = -1,
+            status: str = "running",
+            error: str = "",
+        ) -> None:
+            self.stage = stage
+            self.message = message
+            self.completed = completed
+            self.total = total
+            self.status = status
+            self.error = error
+
+    class FakeBuildHandle:
+        def __init__(
+            self,
+            snapshots: list["TestProjectSettingsActivity.FakeBuildSnapshot"],
+            *,
+            result: object | None = None,
+            finish_error: Exception | None = None,
+        ) -> None:
+            self.snapshots = snapshots
+            self.result = result
+            self.finish_error = finish_error
+            self.poll_calls = 0
+            self.finish_calls = 0
+            self.finalized = False
+
+    def _install_fake_build_api(self, handles: list["TestProjectSettingsActivity.FakeBuildHandle"]) -> list[object]:
+        created_handles: list[TestProjectSettingsActivity.FakeBuildHandle] = []
+
+        def fake_start(project_settings: object) -> TestProjectSettingsActivity.FakeBuildHandle:
+            del project_settings
+            if not handles:
+                self.fail("No fake build handles were configured.")
+            handle = handles.pop(0)
+            created_handles.append(handle)
+            return handle
+
+        def fake_poll(handle: TestProjectSettingsActivity.FakeBuildHandle) -> TestProjectSettingsActivity.FakeBuildSnapshot:
+            index = min(handle.poll_calls, len(handle.snapshots) - 1)
+            handle.poll_calls += 1
+            return handle.snapshots[index]
+
+        def fake_finish(handle: TestProjectSettingsActivity.FakeBuildHandle) -> object:
+            handle.finish_calls += 1
+            if not handle.snapshots:
+                raise RuntimeError("No snapshots were configured.")
+            terminal = handle.snapshots[min(max(handle.poll_calls - 1, 0), len(handle.snapshots) - 1)]
+            if terminal.status == "running":
+                raise RuntimeError("Project build is still running.")
+            if handle.finalized:
+                raise RuntimeError("Project build has already been finalized.")
+            handle.finalized = True
+            if handle.finish_error is not None:
+                raise handle.finish_error
+            return handle.result
+
+        projectsettingsactivity_module.start_project_area_build = fake_start
+        projectsettingsactivity_module.poll_project_area_build = fake_poll
+        projectsettingsactivity_module.finish_project_area_build = fake_finish
+        return created_handles
+
+    def test_polling_updates_text_box_before_build_finishes(self) -> None:
         class FakeProjectSettings:
             def __init__(self, *args: object) -> None:
                 self.args = args
@@ -110,21 +197,20 @@ class TestProjectSettingsActivity(unittest.TestCase):
         class FakeProjectArea:
             pass
 
-        class FakeProgressEvent:
-            def __init__(self, message: str) -> None:
-                self.message = message
-
-        def fake_build_project_area(project_settings: object, callback: object) -> FakeProjectArea:
-            del project_settings
-            callback(FakeProgressEvent("step 1"))
-            time.sleep(0.2)
-            callback(FakeProgressEvent("step 2"))
-            time.sleep(0.2)
-            return FakeProjectArea()
-
         projectsettingsactivity_module.ProjectSettings = FakeProjectSettings
         projectsettingsactivity_module.ProjectArea = FakeProjectArea
-        projectsettingsactivity_module.build_project_area_with_progress = fake_build_project_area
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [
+                        self.FakeBuildSnapshot(message="step 1", status="running"),
+                        self.FakeBuildSnapshot(message="step 2", status="running"),
+                        self.FakeBuildSnapshot(message="finished", status="succeeded"),
+                    ],
+                    result=FakeProjectArea(),
+                )
+            ]
+        )
 
         launched = []
         activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))
@@ -140,53 +226,68 @@ class TestProjectSettingsActivity(unittest.TestCase):
 
             self.assertIn("Processing started:", activity.text_output.toPlainText())
             self.assertIn("step 1", activity.text_output.toPlainText())
-            self.assertLess(seen_step_one_at - started_at, 0.35)
+            self.assertLess(seen_step_one_at - started_at, 0.5)
             self.assertNotIn("step 2", activity.text_output.toPlainText())
 
             self._wait_until(lambda: bool(launched))
             self.assertTrue(activity.start_button.isEnabled())
             self.assertIn("step 2", activity.text_output.toPlainText())
 
-    def test_progress_updates_are_throttled_for_per_unit_messages(self) -> None:
-        class FakeProgressEvent:
-            def __init__(self, stage: str, message: str, completed: int = -1, total: int = -1) -> None:
-                self.stage = stage
-                self.message = message
-                self.completed = completed
-                self.total = total
+    def test_duplicate_snapshots_do_not_append_duplicate_lines(self) -> None:
+        class FakeProjectArea:
+            pass
 
-        worker = projectsettingsactivity_module.ProjectBuildWorker(
-            "project",
-            "unit",
-            "ref",
-            "prop",
-            "fia",
-            "lidar",
-            "name",
-            "save",
-            4,
+        projectsettingsactivity_module.ProjectArea = FakeProjectArea
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [
+                        self.FakeBuildSnapshot(message="Loading lidar", status="running"),
+                        self.FakeBuildSnapshot(message="Loading lidar", status="running"),
+                        self.FakeBuildSnapshot(message="finished", status="succeeded"),
+                    ],
+                    result=FakeProjectArea(),
+                )
+            ]
         )
 
-        self.assertEqual(
-            "",
-            worker._format_progress_update(FakeProgressEvent("unit_start", "start", 0, 100)),
+        launched = []
+        activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activity = self._make_activity(Path(tmpdir))
+            activity.start_clicked()
+            self._wait_until(lambda: bool(launched))
+            self.assertEqual(1, activity.text_output.toPlainText().count("Loading lidar"))
+
+    def test_advancing_completed_with_same_message_updates_visible_progress(self) -> None:
+        class FakeProjectArea:
+            pass
+
+        projectsettingsactivity_module.ProjectArea = FakeProjectArea
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [
+                        self.FakeBuildSnapshot(message="Processing units", completed=0, total=10, status="running"),
+                        self.FakeBuildSnapshot(message="Processing units", completed=5, total=10, status="running"),
+                        self.FakeBuildSnapshot(message="Finished building", completed=10, total=10, status="succeeded"),
+                    ],
+                    result=FakeProjectArea(),
+                )
+            ]
         )
-        self.assertEqual(
-            "",
-            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 24", 24, 100)),
-        )
-        self.assertEqual(
-            "done 25 [25/100]",
-            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 25", 25, 100)),
-        )
-        self.assertEqual(
-            "done 100 [100/100]",
-            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 100", 100, 100)),
-        )
-        self.assertEqual(
-            "failed",
-            worker._format_progress_update(FakeProgressEvent("unit_failed", "failed", 24, 100)),
-        )
+
+        launched = []
+        activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activity = self._make_activity(Path(tmpdir))
+            activity.start_clicked()
+            self._wait_until(lambda: "[5/10]" in activity.text_output.toPlainText())
+            self._wait_until(lambda: bool(launched))
+            self.assertIn("Processing units [0/10]", activity.text_output.toPlainText())
+            self.assertIn("Processing units [5/10]", activity.text_output.toPlainText())
 
     def test_success_launches_gaming_activity_with_project_objects(self) -> None:
         class FakeProjectSettings:
@@ -196,18 +297,16 @@ class TestProjectSettingsActivity(unittest.TestCase):
         class FakeProjectArea:
             pass
 
-        class FakeProgressEvent:
-            def __init__(self, message: str) -> None:
-                self.message = message
-
-        def fake_build_project_area(project_settings: object, callback: object) -> FakeProjectArea:
-            callback(FakeProgressEvent("finished"))
-            self.assertIsInstance(project_settings, FakeProjectSettings)
-            return FakeProjectArea()
-
         projectsettingsactivity_module.ProjectSettings = FakeProjectSettings
         projectsettingsactivity_module.ProjectArea = FakeProjectArea
-        projectsettingsactivity_module.build_project_area_with_progress = fake_build_project_area
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [self.FakeBuildSnapshot(message="finished", status="succeeded")],
+                    result=FakeProjectArea(),
+                )
+            ]
+        )
 
         launched = []
         activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))
@@ -234,18 +333,18 @@ class TestProjectSettingsActivity(unittest.TestCase):
             def __init__(self, *args: object) -> None:
                 self.args = args
 
-        class FakeProgressEvent:
-            def __init__(self, message: str) -> None:
-                self.message = message
-
-        def fake_build_project_area(project_settings: object, callback: object) -> object:
-            del project_settings
-            callback(FakeProgressEvent("before error"))
-            time.sleep(0.1)
-            raise RuntimeError("boom")
-
         projectsettingsactivity_module.ProjectSettings = FakeProjectSettings
-        projectsettingsactivity_module.build_project_area_with_progress = fake_build_project_area
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [
+                        self.FakeBuildSnapshot(message="before error", status="running"),
+                        self.FakeBuildSnapshot(message="before error", status="failed", error="boom"),
+                    ],
+                    finish_error=RuntimeError("boom"),
+                )
+            ]
+        )
 
         launched = []
         activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))
@@ -263,6 +362,78 @@ class TestProjectSettingsActivity(unittest.TestCase):
             self.assertIn("before error", activity.text_output.toPlainText())
             self.assertIn("boom", errors[0])
             self.assertIn("Debugging Traceback", errors[0])
+
+    def test_closing_window_stops_polling_and_disposes_handle(self) -> None:
+        handle = self.FakeBuildHandle(
+            [
+                self.FakeBuildSnapshot(message="step 1", status="running"),
+                self.FakeBuildSnapshot(message="step 1", status="running"),
+            ]
+        )
+        self._install_fake_build_api([handle])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activity = self._make_activity(Path(tmpdir))
+            activity.start_clicked()
+            self._wait_until(lambda: handle.poll_calls > 0)
+            worker = activity.worker
+            self.assertIsNotNone(worker)
+            activity.window.close()
+            self.app.processEvents()
+            self.assertFalse(activity._progress_timer.isActive())
+            self.assertIsNone(activity.worker)
+            assert worker is not None
+            self.assertIsNone(worker.handle)
+
+    def test_finalize_raises_while_build_is_running(self) -> None:
+        worker = projectsettingsactivity_module.ProjectBuildWorker(
+            "project",
+            "unit",
+            "ref",
+            "prop",
+            "fia",
+            "lidar",
+            "name",
+            "save",
+            4,
+        )
+        self._install_fake_build_api(
+            [self.FakeBuildHandle([self.FakeBuildSnapshot(message="running", status="running")])]
+        )
+
+        worker.start()
+
+        with self.assertRaisesRegex(RuntimeError, "still running"):
+            worker.finalize()
+
+    def test_finalize_rejects_double_finish(self) -> None:
+        class FakeProjectArea:
+            pass
+
+        worker = projectsettingsactivity_module.ProjectBuildWorker(
+            "project",
+            "unit",
+            "ref",
+            "prop",
+            "fia",
+            "lidar",
+            "name",
+            "save",
+            4,
+        )
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [self.FakeBuildSnapshot(message="done", status="succeeded")],
+                    result=FakeProjectArea(),
+                )
+            ]
+        )
+
+        worker.start()
+        self.assertIsInstance(worker.finalize(), FakeProjectArea)
+        with self.assertRaisesRegex(RuntimeError, "already been finalized"):
+            worker.finalize()
 
     def test_save_settings_as_preserves_descriptive_filename(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -287,14 +458,16 @@ class TestProjectSettingsActivity(unittest.TestCase):
         class FakeProjectArea:
             pass
 
-        def fake_build_project_area(project_settings: object, callback: object) -> FakeProjectArea:
-            del callback
-            self.assertIsInstance(project_settings, FakeProjectSettings)
-            return FakeProjectArea()
-
         projectsettingsactivity_module.ProjectSettings = FakeProjectSettings
         projectsettingsactivity_module.ProjectArea = FakeProjectArea
-        projectsettingsactivity_module.build_project_area_with_progress = fake_build_project_area
+        self._install_fake_build_api(
+            [
+                self.FakeBuildHandle(
+                    [self.FakeBuildSnapshot(message="finished", status="succeeded")],
+                    result=FakeProjectArea(),
+                )
+            ]
+        )
 
         launched = []
         activity_module.Activity.start_activity = staticmethod(lambda *args, **kwargs: launched.append((args, kwargs)))

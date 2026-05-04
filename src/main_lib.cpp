@@ -1,7 +1,12 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
+#include <memory>
 #include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <thread>
+#include <utility>
 #include "projectSettings.hpp"
 #include "rxgProjectArea.hpp"
 #include "rxgSnapshot.hpp"
@@ -10,33 +15,159 @@
 namespace py = pybind11;
 
 namespace {
-    rxgaming::RxGamingProjectArea build_project_area_with_progress(const rxgaming::ProjectSettings& ps, py::object callback) {
-        if (callback.is_none()) {
-            py::gil_scoped_release release;
-            return rxgaming::RxGamingProjectArea(ps);
+    struct ProjectAreaBuildSnapshot {
+        std::string stage;
+        std::string message;
+        int completed = -1;
+        int total = -1;
+        std::string status = "running";
+        std::string error;
+    };
+
+    struct ProjectAreaBuildState {
+        std::mutex mutex;
+        ProjectAreaBuildSnapshot snapshot;
+        std::optional<rxgaming::RxGamingProjectArea> projectArea;
+        bool finalized = false;
+
+        void applyEvent(const rxgaming::ProgressEvent& event) {
+            std::lock_guard<std::mutex> lock(mutex);
+            snapshot.stage = event.stage;
+            snapshot.message = event.message;
+            snapshot.completed = event.completed;
+            snapshot.total = event.total;
+            if (event.stage == "unit_failed") {
+                snapshot.status = "failed";
+                snapshot.error = event.message;
+            }
         }
 
-        std::mutex callbackMutex;
-        rxgaming::ProgressCallback progressCallback = [callback, &callbackMutex](const rxgaming::ProgressEvent& event) {
-            std::lock_guard<std::mutex> lock(callbackMutex);
-            py::gil_scoped_acquire gil;
-            callback(event);
-        };
+        ProjectAreaBuildSnapshot snapshotCopy() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return snapshot;
+        }
 
-        py::gil_scoped_release release;
-        return rxgaming::RxGamingProjectArea(ps, progressCallback);
+        void storeSuccess(rxgaming::RxGamingProjectArea&& area) {
+            std::lock_guard<std::mutex> lock(mutex);
+            projectArea = std::move(area);
+            snapshot.status = "succeeded";
+            snapshot.error.clear();
+        }
+
+        void storeFailure(const std::string& errorText) {
+            std::lock_guard<std::mutex> lock(mutex);
+            snapshot.status = "failed";
+            snapshot.error = errorText;
+            if (snapshot.message.empty()) {
+                snapshot.message = errorText;
+            }
+        }
+    };
+
+    class ProjectAreaBuildHandle {
+    public:
+        explicit ProjectAreaBuildHandle(const rxgaming::ProjectSettings& ps)
+            : state_(std::make_shared<ProjectAreaBuildState>())
+        {
+            worker_ = std::thread([state = state_, ps]() {
+                rxgaming::ProgressCallback progressCallback = [state](const rxgaming::ProgressEvent& event) {
+                    state->applyEvent(event);
+                };
+
+                try {
+                    auto projectArea = rxgaming::RxGamingProjectArea(ps, progressCallback);
+                    state->storeSuccess(std::move(projectArea));
+                }
+                catch (const std::exception& e) {
+                    state->storeFailure(e.what());
+                }
+                catch (...) {
+                    state->storeFailure("Project build failed with an unknown exception.");
+                }
+            });
+        }
+
+        ProjectAreaBuildHandle(const ProjectAreaBuildHandle&) = delete;
+        ProjectAreaBuildHandle& operator=(const ProjectAreaBuildHandle&) = delete;
+
+        ~ProjectAreaBuildHandle() {
+            if (worker_.joinable()) {
+                worker_.join();
+            }
+        }
+
+        ProjectAreaBuildSnapshot poll() {
+            return state_->snapshotCopy();
+        }
+
+        rxgaming::RxGamingProjectArea finish() {
+            {
+                std::lock_guard<std::mutex> lock(state_->mutex);
+                if (state_->snapshot.status == "running") {
+                    throw std::runtime_error("Project build is still running.");
+                }
+                if (state_->finalized) {
+                    throw std::runtime_error("Project build has already been finalized.");
+                }
+                state_->finalized = true;
+            }
+
+            if (worker_.joinable()) {
+                py::gil_scoped_release release;
+                worker_.join();
+            }
+
+            std::optional<rxgaming::RxGamingProjectArea> completedArea;
+            std::string errorText;
+            {
+                std::lock_guard<std::mutex> lock(state_->mutex);
+                if (state_->snapshot.status == "failed") {
+                    errorText = state_->snapshot.error.empty() ? state_->snapshot.message : state_->snapshot.error;
+                }
+                else if (state_->projectArea.has_value()) {
+                    completedArea = std::move(state_->projectArea);
+                }
+            }
+
+            if (!errorText.empty()) {
+                throw std::runtime_error(errorText);
+            }
+            if (!completedArea.has_value()) {
+                throw std::runtime_error("Project build completed without a resulting ProjectArea.");
+            }
+            return std::move(completedArea.value());
+        }
+
+    private:
+        std::shared_ptr<ProjectAreaBuildState> state_;
+        std::thread worker_;
+    };
+
+    std::shared_ptr<ProjectAreaBuildHandle> start_project_area_build(const rxgaming::ProjectSettings& ps) {
+        return std::make_shared<ProjectAreaBuildHandle>(ps);
+    }
+
+    ProjectAreaBuildSnapshot poll_project_area_build(const std::shared_ptr<ProjectAreaBuildHandle>& handle) {
+        if (!handle) {
+            throw std::runtime_error("Project build handle is invalid.");
+        }
+        return handle->poll();
+    }
+
+    rxgaming::RxGamingProjectArea finish_project_area_build(const std::shared_ptr<ProjectAreaBuildHandle>& handle) {
+        if (!handle) {
+            throw std::runtime_error("Project build handle is invalid.");
+        }
+        return handle->finish();
     }
 }
 
 PYBIND11_MODULE(rxgaming_core, m) {
     m.def("set_proj_db_path", &rxgaming::set_proj_db_path, "Set the PROJ data directory path");
     m.def("set_seed", &rxgaming::set_seed, "Set the random seed");
-    m.def(
-        "build_project_area_with_progress",
-        &build_project_area_with_progress,
-        py::arg("ps"),
-        py::arg("callback") = py::none(),
-        "Build a ProjectArea while reporting structured progress events.");
+    m.def("start_project_area_build", &start_project_area_build, py::arg("ps"), "Start a ProjectArea build in the background.");
+    m.def("poll_project_area_build", &poll_project_area_build, py::arg("handle"), "Poll the latest ProjectArea build progress.");
+    m.def("finish_project_area_build", &finish_project_area_build, py::arg("handle"), "Finalize a completed ProjectArea build.");
     m.def(
         "save_project_area",
         &rxgaming::save_project_area,
@@ -76,6 +207,17 @@ PYBIND11_MODULE(rxgaming_core, m) {
         .def_readonly("unitName", &rxgaming::ProgressEvent::unitName)
         .def_readonly("completed", &rxgaming::ProgressEvent::completed)
         .def_readonly("total", &rxgaming::ProgressEvent::total);
+
+    py::class_<ProjectAreaBuildSnapshot>(m, "ProjectAreaBuildSnapshot")
+        .def(py::init<>())
+        .def_readonly("stage", &ProjectAreaBuildSnapshot::stage)
+        .def_readonly("message", &ProjectAreaBuildSnapshot::message)
+        .def_readonly("completed", &ProjectAreaBuildSnapshot::completed)
+        .def_readonly("total", &ProjectAreaBuildSnapshot::total)
+        .def_readonly("status", &ProjectAreaBuildSnapshot::status)
+        .def_readonly("error", &ProjectAreaBuildSnapshot::error);
+
+    py::class_<ProjectAreaBuildHandle, std::shared_ptr<ProjectAreaBuildHandle>>(m, "ProjectAreaBuildHandle");
 
     py::class_<rxgaming::ProjectSettings>(m, "ProjectSettings")
         .def(py::init<std::string, std::string, std::string, std::string,

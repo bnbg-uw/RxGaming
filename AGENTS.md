@@ -15,11 +15,9 @@ This repository is primarily developed in `python/` and non-submodule C++ source
 
 ## Validation
 
-- Prefer the existing Python unit tests over ad hoc smoke tests when validating Python changes.
-- Python-only changes: run the relevant unit tests in `python/tests` when practical.
-- C++ changes: run `cmake --build build/release --config Release`.
-- Mixed Python and C++ changes: do both when practical.
-- If validation is skipped or partial, say so clearly and explain why.
+- Edit the existing Python unit tests, but do not run them.
+- Python-only changes: create relevant unit tests in `python/tests` but do not run them, allow the user to run tests.
+- C++ changes: Do not build, notify that the user that a build is needed.
 
 ## Allowed Edits
 

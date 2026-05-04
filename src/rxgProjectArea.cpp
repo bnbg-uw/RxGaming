@@ -33,7 +33,6 @@ namespace rxgaming {
             if (!progressCallback) {
                 return;
             }
-            std::cout << "C++ emit: " << message << '\n';
             progressCallback(ProgressEvent{stage, message, unitIndex, unitName, completed, total});
         }
     }
