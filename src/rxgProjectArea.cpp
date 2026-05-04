@@ -33,7 +33,7 @@ namespace rxgaming {
             if (!progressCallback) {
                 return;
             }
-
+            std::cout << "C++ emit: " << message << '\n';
             progressCallback(ProgressEvent{stage, message, unitIndex, unitName, completed, total});
         }
     }
@@ -105,13 +105,22 @@ namespace rxgaming {
         }
 
         std::atomic<int> completedUnits(0);
-
+        std::cout << "NUMBER OF THREADS: " << ps.nThread << "\n";
         #pragma omp parallel num_threads(ps.nThread)
         {
+            #pragma omp single
+            {
+                std::cout
+                    << "omp_in_parallel=" << omp_in_parallel()
+                    << ", team_size=" << omp_get_num_threads()
+                    << ", requested=" << ps.nThread
+                    << '\n';
+            }
             std::vector<RxGamingRxUnit> localUnits;
 
             #pragma omp for nowait
             for(int i = 0; i < unitPolygon.nFeature(); ++i) {
+                int thisThreadNum =  omp_get_thread_num();
                 auto unit = unitPolygon.getFeature(i);
                 std::string name;
                 if(nameFieldExists) {
@@ -125,7 +134,7 @@ namespace rxgaming {
                 emit_progress(
                     progressCallback,
                     "unit_start",
-                    "Starting unit " + std::to_string(i) + " (" + name + ")",
+                    "[Thread " + std::to_string(thisThreadNum) + "] Starting unit " + std::to_string(i) + " (" + name + ")",
                     i,
                     name,
                     completedUnits.load(),
@@ -136,6 +145,7 @@ namespace rxgaming {
                 rxtools::TaoList taos(mask.crs());
                 try {
                     if (mask.dataOverlapsMultiPolygon(unit.getGeometry())) {
+                        std::cout << "[ Thread" + std::to_string(thisThreadNum) + "] Unit: " + std::to_string(i) + "\n";
                         for (int j = 0; j < lidar->nTiles(); j++) {
                             auto e = lidar->extentByTile(j);
                             if (e) {
@@ -197,7 +207,7 @@ namespace rxgaming {
                             emit_progress(
                                 progressCallback,
                                 "unit_skipped",
-                                "Skipped unit " + std::to_string(i) + " (" + name + ") because no overlapping lidar rasters were collected",
+                                "[Thread " + std::to_string(thisThreadNum) + "] Skipped unit " + std::to_string(i) + " (" + name + ") because no overlapping lidar rasters were collected",
                                 i,
                                 name,
                                 completed,
@@ -258,7 +268,7 @@ namespace rxgaming {
                         emit_progress(
                             progressCallback,
                             "unit_complete",
-                            "Completed unit " + std::to_string(i) + " (" + name + ")",
+                            "[Thread " + std::to_string(thisThreadNum) + "] Completed unit " + std::to_string(i) + " (" + name + ")",
                             i,
                             name,
                             completed,
@@ -269,7 +279,7 @@ namespace rxgaming {
                         emit_progress(
                             progressCallback,
                             "unit_skipped",
-                            "Skipped unit " + std::to_string(i) + " (" + name + ") because the project mask does not overlap",
+                            "[Thread " + std::to_string(thisThreadNum) + "] Skipped unit " + std::to_string(i) + " (" + name + ") because the project mask does not overlap",
                             i,
                             name,
                             completed,
@@ -282,7 +292,7 @@ namespace rxgaming {
                     emit_progress(
                         progressCallback,
                         "unit_skipped",
-                        "Skipped unit " + std::to_string(i) + " (" + name + ") due to missing file: " + std::string(e.what()),
+                        "[Thread " + std::to_string(thisThreadNum) + "] Skipped unit " + std::to_string(i) + " (" + name + ") due to missing file: " + std::string(e.what()),
                         i,
                         name,
                         completed,
@@ -293,7 +303,7 @@ namespace rxgaming {
                     emit_progress(
                         progressCallback,
                         "unit_failed",
-                        "Unit " + std::to_string(i) + " (" + name + ") failed: " + std::string(e.what()),
+                        "[Thread " + std::to_string(thisThreadNum) + "] Unit " + std::to_string(i) + " (" + name + ") failed: " + std::string(e.what()),
                         i,
                         name,
                         completedUnits.load(),
@@ -304,7 +314,7 @@ namespace rxgaming {
                     emit_progress(
                         progressCallback,
                         "unit_failed",
-                        "Unit " + std::to_string(i) + " (" + name + ") failed with an unknown exception",
+                        "[Thread " + std::to_string(thisThreadNum) + "] Unit " + std::to_string(i) + " (" + name + ") failed with an unknown exception",
                         i,
                         name,
                         completedUnits.load(),

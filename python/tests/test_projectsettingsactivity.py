@@ -147,6 +147,47 @@ class TestProjectSettingsActivity(unittest.TestCase):
             self.assertTrue(activity.start_button.isEnabled())
             self.assertIn("step 2", activity.text_output.toPlainText())
 
+    def test_progress_updates_are_throttled_for_per_unit_messages(self) -> None:
+        class FakeProgressEvent:
+            def __init__(self, stage: str, message: str, completed: int = -1, total: int = -1) -> None:
+                self.stage = stage
+                self.message = message
+                self.completed = completed
+                self.total = total
+
+        worker = projectsettingsactivity_module.ProjectBuildWorker(
+            "project",
+            "unit",
+            "ref",
+            "prop",
+            "fia",
+            "lidar",
+            "name",
+            "save",
+            4,
+        )
+
+        self.assertEqual(
+            "",
+            worker._format_progress_update(FakeProgressEvent("unit_start", "start", 0, 100)),
+        )
+        self.assertEqual(
+            "",
+            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 24", 24, 100)),
+        )
+        self.assertEqual(
+            "done 25 [25/100]",
+            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 25", 25, 100)),
+        )
+        self.assertEqual(
+            "done 100 [100/100]",
+            worker._format_progress_update(FakeProgressEvent("unit_complete", "done 100", 100, 100)),
+        )
+        self.assertEqual(
+            "failed",
+            worker._format_progress_update(FakeProgressEvent("unit_failed", "failed", 24, 100)),
+        )
+
     def test_success_launches_gaming_activity_with_project_objects(self) -> None:
         class FakeProjectSettings:
             def __init__(self, *args: object) -> None:

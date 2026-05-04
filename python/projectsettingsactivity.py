@@ -37,6 +37,8 @@ from persistence import build_form_state, write_project_settings_file
 from rxgaming_core import ProjectArea, ProjectSettings
 from widgets import QFileSelectionLineEdit
 
+PROGRESS_UI_UPDATE_INTERVAL = 25
+
 try:
     from rxgaming_core import build_project_area_with_progress
 except ImportError:
@@ -386,6 +388,25 @@ class ProjectBuildWorker(QObject):
         self.save_path = save_path
         self.threads = threads
 
+    @staticmethod
+    def _format_progress_update(event: Any) -> str:
+        stage = str(getattr(event, "stage", ""))
+        message = str(getattr(event, "message", ""))
+        completed = getattr(event, "completed", -1)
+        total = getattr(event, "total", -1)
+
+        if stage == "unit_start":
+            return ""
+
+        if stage in {"unit_complete", "unit_skipped"} and isinstance(completed, int) and isinstance(total, int):
+            if completed <= 0 or total <= 0:
+                return ""
+            if completed != total and completed % PROGRESS_UI_UPDATE_INTERVAL != 0:
+                return ""
+            return f"{message} [{completed}/{total}]"
+
+        return message
+
     @Slot()
     def run(self) -> None:
         try:
@@ -402,11 +423,11 @@ class ProjectBuildWorker(QObject):
             )
 
             def on_progress(event: Any) -> None:
-                message = getattr(event, "message", "")
+                message = self._format_progress_update(event)
                 if message:
                     self.progress_message.emit(message)
 
-            project_area = build_project_area_with_progress(project_settings, on_progress)
+            project_area = build_project_area_with_progress(project_settings, None)
             self.finished.emit(
                 {
                     "project_settings": project_settings,
