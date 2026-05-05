@@ -1,0 +1,12 @@
+name: rxgaming
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - matplotlib
+  - scipy
+  - seaborn
+  - shapely
+  - pyside6
+  - pyinstaller

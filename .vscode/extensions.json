@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.pylance",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools",
+        "donjayamanne.python-environment-manager",
+        "eamodio.gitlens"
+    ]
+}

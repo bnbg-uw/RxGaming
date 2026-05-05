@@ -1,0 +1,31 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build C++",
+            "type": "shell",
+            "command": "cmake --build build/release --config Release",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Build PyInstaller",
+            "type": "shell",
+            "command": "if (Test-Path target\\rxgaming) { Remove-Item -LiteralPath target\\rxgaming -Recurse -Force }\n$env:PYTHONPATH='python'\n$env:PYTHONDONTWRITEBYTECODE='1'\nconda run -n rxgaming pyinstaller --noconfirm --clean --distpath target --workpath build\\pyinstaller rxgaming.spec",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Update submodules",
+            "type": "shell",
+            "command": "git submodule update --remote --merge && git add src/lapisgis src/lico src/processedfolder src/rxtools",
+            "problemMatcher": []
+        }
+    ]
+}
