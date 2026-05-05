@@ -296,14 +296,13 @@ class ProjectSnapshotSessionPersistence(GamingSessionPersistence):
         )
 
     def save_session(self, state: StandViewState, reason: str = "session_updated") -> None:
+        del reason
         session_path = self.project_root / SESSION_FILE_NAME
         _atomic_write_json(session_path, {
             "format": "rxgaming-session",
             "schema_version": SCHEMA_VERSION,
             "session_state": state.to_dict(),
         })
-        if reason in {"targets_changed", "show_treatment_toggled", "manual_save"}:
-            self.initialize_snapshot(state)
 
     def save_full_project(self, state: StandViewState) -> Path:
         return write_project_snapshot(

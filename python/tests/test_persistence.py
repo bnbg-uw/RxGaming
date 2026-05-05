@@ -194,7 +194,7 @@ class TestPersistence(unittest.TestCase):
             self.assertEqual("project-folder", loaded.form_state["auto_save_path"])
             self.assertTrue(loaded.form_state["auto_save_enabled"])
 
-    def test_snapshot_session_persistence_updates_session_file(self) -> None:
+    def test_snapshot_session_persistence_updates_session_file_without_rewriting_snapshot(self) -> None:
         saved_snapshots: list[dict[str, object]] = []
 
         def fake_write_project_snapshot(
@@ -244,7 +244,8 @@ class TestPersistence(unittest.TestCase):
                 self.assertEqual(1, len(saved_snapshots))
 
                 session_persistence.save_session(state, "targets_changed")
-                self.assertEqual(2, len(saved_snapshots))
+                session_persistence.save_session(state, "show_treatment_toggled")
+                self.assertEqual(1, len(saved_snapshots))
         finally:
             persistence.write_project_snapshot = original_write_project_snapshot
 

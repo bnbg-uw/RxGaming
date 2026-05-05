@@ -245,19 +245,52 @@ class StandControls(QWidget):
         self.raster_mode = QComboBox()
         self.raster_mode.addItems(["Canopy Model", "Basins", "Clumps"])
 
-        self.show_treatment_button = QPushButton("Show Treatment")
+        self.show_treatment_button = QPushButton()
         self.show_treatment_button.setCheckable(True)
+        self.show_treatment_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.show_treatment_button.setMinimumHeight(34)
+        self.show_treatment_button.setMinimumWidth(170)
+        self.show_treatment_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.show_treatment_button.setStyleSheet(
-            "QPushButton:checked { background-color: rgb(80, 80, 80); color: white; border: none; }"
+            """
+            QPushButton {
+                background-color: #222;
+                color: #d8f0f2;
+                font-weight: 700;
+                border: 1px solid #1e3a3f;
+                border-radius: 8px;
+                padding: 6px 14px;
+            }
+            QPushButton:hover {
+                border-color: #438f99;
+                background-color: #2b2b2b;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+            QPushButton:checked {
+                background-color: #438f99;
+                color: #12343b;
+                border: 1px solid #1e3a3f;
+            }
+            QPushButton:checked:hover {
+                background-color: #52a7b1;
+            }
+            """
         )
+        self.set_show_treatment_checked(False)
 
         layout = QGridLayout()
         layout.addWidget(QLabel(display_name_for("dbh", unit_system)), 0, 0)
         layout.addWidget(self.dbh_cutoff, 0, 1, 1, 3)
         layout.addWidget(QLabel("View Mode:"), 1, 0)
         layout.addWidget(self.raster_mode, 1, 1, 1, 3)
-        layout.addWidget(self.show_treatment_button, 2, 1, 1, 2)
+        layout.addWidget(self.show_treatment_button, 2, 1, 1, 3)
         self.setLayout(layout)
+
+    def set_show_treatment_checked(self, checked: bool) -> None:
+        self.show_treatment_button.setChecked(checked)
+        self.show_treatment_button.setText("Showing Treatment" if checked else "Show Treatment")
 
 
 class UnitSidebar(QWidget):

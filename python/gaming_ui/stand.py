@@ -148,7 +148,7 @@ class StandViewCoordinator(QWidget):
     def _restore_state(self) -> None:
         self.sidebar.stand_controls.raster_mode.setCurrentIndex(self.state.raster_mode)
         self.sidebar.stand_controls.dbh_cutoff.setValue(int(round(dbh_to_display(self.state.dbh_cutoff, self.unit_system))))
-        self.sidebar.stand_controls.show_treatment_button.setChecked(self.state.show_treatment)
+        self.sidebar.stand_controls.set_show_treatment_checked(self.state.show_treatment)
         self.pages.setCurrentIndex(self.state.active_page)
 
         if self.rx_units:
@@ -194,6 +194,7 @@ class StandViewCoordinator(QWidget):
         self.refresh_current_page(trigger=trigger)
 
     def _on_show_treatment_toggled(self, checked: bool) -> None:
+        self.sidebar.stand_controls.set_show_treatment_checked(checked)
         if checked and self.rx_units:
             unit = self.current_unit()
             self.treatment_engine.do_treatment(unit, self.dbh_min(), self.dbh_max())

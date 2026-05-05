@@ -60,9 +60,6 @@ class GamingActivity(Activity):
         self._create_actions()
         self._create_menu()
 
-        if self._persistence is not None and self.project_snapshot_path is not None:
-            self._persistence.initialize_snapshot(self.tab_widget.session_state)
-
     def save(self) -> dict[str, Any]:
         return {
             "ProjectSettings": self.project_settings,
