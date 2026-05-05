@@ -104,17 +104,8 @@ namespace rxgaming {
         }
 
         std::atomic<int> completedUnits(0);
-        std::cout << "NUMBER OF THREADS: " << ps.nThread << "\n";
         #pragma omp parallel num_threads(ps.nThread)
         {
-            #pragma omp single
-            {
-                std::cout
-                    << "omp_in_parallel=" << omp_in_parallel()
-                    << ", team_size=" << omp_get_num_threads()
-                    << ", requested=" << ps.nThread
-                    << '\n';
-            }
             std::vector<RxGamingRxUnit> localUnits;
 
             #pragma omp for nowait
@@ -144,7 +135,6 @@ namespace rxgaming {
                 rxtools::TaoList taos(mask.crs());
                 try {
                     if (mask.dataOverlapsMultiPolygon(unit.getGeometry())) {
-                        std::cout << "[ Thread" + std::to_string(thisThreadNum) + "] Unit: " + std::to_string(i) + "\n";
                         for (int j = 0; j < lidar->nTiles(); j++) {
                             auto e = lidar->extentByTile(j);
                             if (e) {

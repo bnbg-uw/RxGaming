@@ -6,10 +6,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PyInstaller.utils.hooks import Tree
-
-
-ROOT = Path(SPECPATH).resolve().parent
+ROOT = Path(SPECPATH).resolve()
 PYTHON_DIR = ROOT / "python"
 RESOURCES_DIR = ROOT / "resources"
 ICON_PATH = ROOT / "icons" / "Icon.ico"
@@ -39,7 +36,7 @@ if VCPKG_BIN_DIR is not None:
 
 datas = []
 if RESOURCES_DIR.exists():
-    datas += Tree(str(RESOURCES_DIR), prefix="resources")
+    datas.append((str(RESOURCES_DIR), "resources"))
 
 
 a = Analysis(

@@ -26,6 +26,30 @@ def _base_path() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def _runtime_search_roots(base_path: Path | None = None) -> list[Path]:
+    root = base_path or _base_path()
+    candidates: list[Path] = []
+
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass is not None:
+            candidates.append(Path(meipass))
+
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.extend([exe_dir / "_internal", exe_dir])
+    else:
+        candidates.append(root)
+
+    unique_existing: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate.exists() and candidate not in seen:
+            unique_existing.append(candidate)
+            seen.add(candidate)
+    return unique_existing
+
+
 def _first_existing_path(*candidates: Path) -> Path:
     for candidate in candidates:
         if candidate.exists():
@@ -91,26 +115,45 @@ from savestateactivity import start_save_state_activity
 
 
 def resolve_prop_table_path(base_path: Path | None = None) -> Path:
-    root = base_path or _base_path()
-    return _first_existing_path(
-        root / "resources" / "mcs_prop.csv",
-        root / "mcs_prop.csv",
-    )
+    candidates: list[Path] = []
+    for root in _runtime_search_roots(base_path):
+        candidates.extend(
+            [
+                root / "resources" / "mcs_prop.csv",
+                root / "mcs_prop.csv",
+            ]
+        )
+    return _first_existing_path(*candidates)
 
 
 def resolve_fia_path(base_path: Path | None = None) -> Path:
-    root = base_path or _base_path()
-    return _first_existing_path(
-        root / "resources" / "fia",
-        root / "fia",
-    )
+    candidates: list[Path] = []
+    for root in _runtime_search_roots(base_path):
+        candidates.extend(
+            [
+                root / "resources" / "fia",
+                root / "fia",
+            ]
+        )
+    return _first_existing_path(*candidates)
 
 
 def resolve_proj_data_path(base_path: Path | None = None) -> Path:
-    root = base_path or _base_path()
-    resources_dir = root / "resources"
-    _first_existing_path(resources_dir / "proj.db")
-    return resources_dir
+    candidates: list[Path] = []
+    for root in _runtime_search_roots(base_path):
+        candidates.extend(
+            [
+                root / "resources",
+                root,
+            ]
+        )
+
+    for candidate in candidates:
+        if (candidate / "proj.db").exists():
+            return candidate
+
+    _first_existing_path(*(candidate / "proj.db" for candidate in candidates))
+    raise FileNotFoundError("Could not locate proj.db")
 
 
 def proj_data_directory_arg(base_path: Path | None = None) -> str:
