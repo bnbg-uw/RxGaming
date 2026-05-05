@@ -1,18 +1,104 @@
 #include "projectSettings.hpp"
 #include "rxgProjectArea.hpp"
 #include "rxgUtils.hpp"
-#include "rxgTreatmentEngine.hpp"
-
+#include "rxgTreatmentEngine.hpp#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <string_view>
 
 namespace {
     using rxgaming::ProjectSettings;
+    using rxgaming::RxGamingRxUnit;
+    using rxgaming::TreatmentEngine;
     namespace fs = std::filesystem;
+
+    constexpr double kBaFloor = 0.0;
+    constexpr int kMaxCoverIterations = 24;
+
+    bool nearlyEqual(double lhs, double rhs, double tolerance = 1e-6) {
+        return std::abs(lhs - rhs) <= tolerance;
+    }
+
+    bool sameTreatmentOutcome(const RxGamingRxUnit& lhs, const RxGamingRxUnit& rhs) {
+        return lhs.treatedTaos.size() == rhs.treatedTaos.size()
+            && lhs.cutTaos.size() == rhs.cutTaos.size()
+            && nearlyEqual(lhs.treatedStructure.ba, rhs.treatedStructure.ba)
+            && nearlyEqual(lhs.treatedStructure.tph, rhs.treatedStructure.tph)
+            && nearlyEqual(lhs.treatedStructure.cc, rhs.treatedStructure.cc);
+    }
+
+    void optimizeCoverTreatment(RxGamingRxUnit& unit, double targetCc, TreatmentEngine& treater) {
+        unit.targetStructure.cc = targetCc;
+
+        RxGamingRxUnit bestUnit = unit;
+        RxGamingRxUnit anchorUnit = unit;
+        const bool currentIsFeasible = unit.currentStructure.cc >= targetCc;
+        double bestGap = currentIsFeasible ? unit.currentStructure.cc - targetCc : std::numeric_limits<double>::infinity();
+
+        double anchorBa = unit.currentStructure.ba;
+        double stepBa = std::max(unit.currentStructure.ba * 0.25, 0.5);
+        const double minStepBa = std::max(unit.currentStructure.ba * 0.001, 0.01);
+        size_t lastCutCount = anchorUnit.cutTaos.size();
+        int unchangedRuns = 0;
+
+        for (int iteration = 0; iteration < kMaxCoverIterations; ++iteration) {
+            if (stepBa < minStepBa) {
+                break;
+            }
+
+            const double candidateBa = std::max(kBaFloor, anchorBa - stepBa);
+            if (nearlyEqual(candidateBa, anchorBa, minStepBa * 0.5)) {
+                stepBa *= 0.5;
+                continue;
+            }
+
+            RxGamingRxUnit candidateUnit = anchorUnit;
+            candidateUnit.targetStructure.ba = candidateBa;
+            treater.do_treatment(candidateUnit, candidateUnit.dbhMin, candidateUnit.dbhMax);
+
+            if (sameTreatmentOutcome(candidateUnit, anchorUnit)) {
+                ++unchangedRuns;
+                stepBa *= 0.5;
+                if (unchangedRuns >= 2) {
+                    break;
+                }
+                continue;
+            }
+
+            unchangedRuns = 0;
+            const double candidateCc = candidateUnit.treatedStructure.cc;
+            const bool candidateIsFeasible = candidateCc >= targetCc;
+            const size_t candidateCutCount = candidateUnit.cutTaos.size();
+            const bool oneTreeBreakpoint =
+                candidateCutCount == lastCutCount + 1 || (candidateCutCount > 0 && candidateCutCount + 1 == lastCutCount);
+
+            if (candidateIsFeasible) {
+                const double candidateGap = candidateCc - targetCc;
+                if (candidateGap < bestGap
+                    || (nearlyEqual(candidateGap, bestGap) && candidateUnit.treatedStructure.ba < bestUnit.treatedStructure.ba)) {
+                    bestGap = candidateGap;
+                    bestUnit = candidateUnit;
+                }
+
+                anchorUnit = candidateUnit;
+                anchorBa = candidateBa;
+                lastCutCount = candidateCutCount;
+
+                if (oneTreeBreakpoint) {
+                    stepBa *= 0.5;
+                }
+                continue;
+            }
+
+            stepBa *= 0.5;
+        }
+
+        unit = bestUnit;
+    }
 
     void printUsage() {
         std::cout
@@ -112,13 +198,40 @@ int main(int argc, char** argv) {
         std::cout << "Construction complete.\n";
         std::cout << "Units loaded: " << projectArea.rxUnits.size() << "\n";
 
+        auto projectpoly = lapis::VectorDataset<lapis::MultiPolygon>(settings.unitPolyPath);
+        auto treater = rxgaming::TreatmentEngine();
+
         for (size_t i = 0; i < projectArea.rxUnits.size(); ++i) {
-            const auto& unit = projectArea.rxUnits[i];
-            std::cout << "  [" << i << "] " << unit.name << " areaHa=" << unit.areaHa << "\n";
+            auto name = projectpoly.getStringField(i, "name");
+            auto type = projectpoly.getStringField(i, "type");
+            auto target = projectpoly.getRealField(i, "target");
+
+            auto& unit = projectArea.rxUnits[i];
+            unit.dbhMin = 0;
+            unit.dbhMax = 76.2;
+
+            if(type == "sdi") {
+                double qmd = unit.currentStructure.ba / unit.currentStructure.tph;
+                qmd = qmd / 0.00007854;
+                qmd = std::sqrt(qmd);
+
+                unit.targetStructure.tph = target / std::pow(qmd / 25, 1.605);
+                unit.targetStructure.ba = unit.targetStructure.tph * 0.00007854 * std::pow(qmd, 2);
+                if(name == "E1" || name == "E2") {
+                    unit.dbhMax = 60.706;
+                }
+                treater.do_treatment(unit, unit.dbhMin, unit.dbhMax);
+            } else if(type == "cover") {
+                optimizeCoverTreatment(unit, target, treater);
+   }
+                trtreater.do_treatment(unit, unit.dbhMin, unit.dbhMax);            } else if(type == "cover") {
+                    }
+                treater.do_treatment(unit, unit.dbhMin, unit.dbhMax);
+            } else if(type == "cover") {
+                
+            }
         }
-        projectArea.rxUnits[0].basinMap.writeRaster("F:/basin.tif");
-        projectArea.rxUnits[0].get_clump_map();
-        return 0;
+
     }
     catch (const std::exception& e) {
         std::cerr << "rxgaming_projectarea_smoke failed: " << e.what() << "\n";
