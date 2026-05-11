@@ -1,7 +1,8 @@
 #include "projectSettings.hpp"
 #include "rxgProjectArea.hpp"
 #include "rxgUtils.hpp"
-#include "rxgTreatmentEngine.hpp#include <cmath>
+#include "rxgTreatmentEngine.hpp"
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -99,6 +100,30 @@ namespace {
 
         unit = bestUnit;
     }
+
+    void appendStructures(
+        std::ofstream& stream,
+        std::string& setting,
+        std::string& prescription,
+        std::string& type,
+        double& presc_targ,
+        rxtools::StructureSummary& current, 
+        rxtools::StructureSummary& target,
+        rxtools::StructureSummary& treated,
+        rxtools::treatmentResult result) {
+            stream << setting << "," << prescription << "," << type << "," << presc_targ << ",";
+            stream << current.ba  << "," << current.mcs << "," << current.tph << "," << current.cc << ",";
+            stream << target.ba  << "," << target.mcs << "," << target.tph << "," << target.cc << ",";
+            stream << treated.ba  << "," << treated.mcs << "," << treated.tph << "," << treated.cc << ",";
+            if(result == rxtools::treatmentResult::cuttingFailure) {
+                stream << "cutting_failure";
+            } else if (result == rxtools::treatmentResult::diameterFailure) {
+                stream << "diameter_failure";
+            } else {
+                stream << "success";
+            }
+            stream << "\n";
+        }
 
     void printUsage() {
         std::cout
@@ -201,10 +226,33 @@ int main(int argc, char** argv) {
         auto projectpoly = lapis::VectorDataset<lapis::MultiPolygon>(settings.unitPolyPath);
         auto treater = rxgaming::TreatmentEngine();
 
+        fs::path base = "F:/backbone_outputs";
+        if(fs::exists(base)) {
+            fs::remove_all(base) ;
+        }
+        fs::create_directory(base);
+
+        std::ofstream outTable(base/"table.csv");
+        outTable << "DA_SETTING" << "," << "prescription" << "," << "type" << "," << "prescription_target" << ",";
+        outTable << "current_ba"  << "," << "current_mcs" << "," << "current_tph" << "," << "current_cc" << ",";
+        outTable << "target_ba"  << "," << "target_mcs" << "," << "target_tph" << "," << "target_cc" << ",";
+        outTable << "treated_ba"  << "," << "treated_mcs" << "," << "treated_tph" << "," << "treated_cc" << ",";
+        outTable << "treatment_result"<< "\n";
+        
         for (size_t i = 0; i < projectArea.rxUnits.size(); ++i) {
+            std::cout << i << "\n";
             auto name = projectpoly.getStringField(i, "name");
             auto type = projectpoly.getStringField(i, "type");
             auto target = projectpoly.getRealField(i, "target");
+            auto setting = projectpoly.getStringField(i, "DA_SETTING");
+            std::cout << "Processing unit name=" << name
+                << ", type=" << type
+                << ", setting=" << setting
+                << ", target=" << target << "\n";
+
+            if(!fs::exists(base / setting)) {
+                fs::create_directory(base / setting);
+            }
 
             auto& unit = projectArea.rxUnits[i];
             unit.dbhMin = 0;
@@ -217,21 +265,22 @@ int main(int argc, char** argv) {
 
                 unit.targetStructure.tph = target / std::pow(qmd / 25, 1.605);
                 unit.targetStructure.ba = unit.targetStructure.tph * 0.00007854 * std::pow(qmd, 2);
-                if(name == "E1" || name == "E2") {
+                if(name == "E1" || name == "E2" || name == "A" || name == "B") {
                     unit.dbhMax = 60.706;
                 }
                 treater.do_treatment(unit, unit.dbhMin, unit.dbhMax);
             } else if(type == "cover") {
                 optimizeCoverTreatment(unit, target, treater);
-   }
-                trtreater.do_treatment(unit, unit.dbhMin, unit.dbhMax);            } else if(type == "cover") {
-                    }
-                treater.do_treatment(unit, unit.dbhMin, unit.dbhMax);
-            } else if(type == "cover") {
-                
             }
-        }
 
+            unit.chm.writeRaster((base/setting/(setting+"_chm.tif")).string());
+            unit.getTreatChmRaster().writeRaster((base/setting/(setting+"_treated_chm.tif")).string());
+
+            unit.taos.writeShapefile(base/setting/(setting+"_taos.shp"));
+            unit.treatedTaos.writeShapefile(base/setting/(setting+"_treated_taos.shp"));
+            appendStructures(outTable, setting, name, type, target, unit.currentStructure, unit.targetStructure, unit.treatedStructure, unit.result);
+        }
+        outTable.close();
     }
     catch (const std::exception& e) {
         std::cerr << "rxgaming_projectarea_smoke failed: " << e.what() << "\n";
