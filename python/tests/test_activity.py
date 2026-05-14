@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
-import types
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -15,24 +14,9 @@ PYTHON_DIR = ROOT / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-try:
-    import rxgaming_core  # type: ignore  # noqa: F401
-except ImportError:
-    stub = types.ModuleType("rxgaming_core")
+from test_support_rxgaming_core import ensure_rxgaming_core_test_module
 
-    class StubProjectSettings:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            del args, kwargs
-
-    class StubProjectArea:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            del args, kwargs
-
-    stub.ProjectSettings = StubProjectSettings
-    stub.ProjectArea = StubProjectArea
-    stub.load_project_area = lambda path: object()
-    stub.save_project_area = lambda project_area, path: Path(path).write_bytes(b"stub")
-    sys.modules["rxgaming_core"] = stub
+ensure_rxgaming_core_test_module()
 
 try:
     from PySide6.QtWidgets import QApplication  # type: ignore

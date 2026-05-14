@@ -14,14 +14,9 @@ PYTHON_DIR = ROOT / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-try:
-    import rxgaming_core  # type: ignore  # noqa: F401
-except ImportError:
-    stub = types.ModuleType("rxgaming_core")
-    stub.RxUnit = object
-    stub.StructureSummary = object
-    stub.TreatmentEngine = object
-    sys.modules["rxgaming_core"] = stub
+from test_support_rxgaming_core import ensure_rxgaming_core_test_module
+
+ensure_rxgaming_core_test_module()
 
 from gaming_ui.stand import StandViewCoordinator  # noqa: E402
 from gaming_ui.units import UnitSystem  # noqa: E402

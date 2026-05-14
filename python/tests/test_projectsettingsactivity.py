@@ -16,55 +16,9 @@ PYTHON_DIR = ROOT / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-try:
-    import rxgaming_core  # type: ignore  # noqa: F401
-except ImportError:
-    rx_stub = types.ModuleType("rxgaming_core")
+from test_support_rxgaming_core import ensure_rxgaming_core_test_module
 
-    class StubProjectSettings:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            fields = [
-                "name",
-                "unitPolyPath",
-                "refDataPath",
-                "mcsPropPath",
-                "fiaPath",
-                "lidarPath",
-                "unitName",
-                "savePath",
-                "nThread",
-            ]
-            for field, value in zip(fields, args):
-                setattr(self, field, value)
-            for field in fields:
-                if field in kwargs:
-                    setattr(self, field, kwargs[field])
-
-    class StubProjectArea:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            del args, kwargs
-
-    rx_stub.ProjectSettings = StubProjectSettings
-    rx_stub.ProjectArea = StubProjectArea
-    rx_stub.RxUnit = object
-    rx_stub.ProjectAreaBuildHandle = object
-
-    class StubProjectAreaBuildSnapshot:
-        def __init__(self) -> None:
-            self.stage = ""
-            self.message = ""
-            self.completed = -1
-            self.total = -1
-            self.status = "running"
-            self.error = ""
-
-    rx_stub.ProjectAreaBuildSnapshot = StubProjectAreaBuildSnapshot
-    rx_stub.start_project_area_build = lambda ps: object()
-    rx_stub.poll_project_area_build = lambda handle: StubProjectAreaBuildSnapshot()
-    rx_stub.finish_project_area_build = lambda handle: StubProjectArea()
-    rx_stub.load_project_area = lambda path: object()
-    rx_stub.save_project_area = lambda project_area, path: Path(path).write_bytes(b"stub")
-    sys.modules["rxgaming_core"] = rx_stub
+ensure_rxgaming_core_test_module()
 
 if "gaming_ui" not in sys.modules:
     gaming_ui_stub = types.ModuleType("gaming_ui")

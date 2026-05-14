@@ -24,7 +24,7 @@
         {
             "label": "Run Python Tests",
             "type": "shell",
-            "command": "$env:PYTHONPATH='python'\n$env:PYTHONDONTWRITEBYTECODE='1'\nconda run -n rxgaming python -m unittest discover -s python/tests",
+            "command": "$env:PYTHONPATH='python'\n$env:PYTHONDONTWRITEBYTECODE='1'\n$env:PATH='${workspaceFolder}\\build\\release\\Release;' + $env:PATH\nconda run -n rxgaming python -m unittest discover -s python/tests",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

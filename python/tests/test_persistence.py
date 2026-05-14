@@ -3,44 +3,13 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
-import types
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-try:
-    import rxgaming_core  # type: ignore  # noqa: F401
-except ImportError:
-    stub = types.ModuleType("rxgaming_core")
+from test_support_rxgaming_core import ensure_rxgaming_core_test_module
 
-    class StubProjectSettings:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            fields = [
-                "name",
-                "unitPolyPath",
-                "refDataPath",
-                "mcsPropPath",
-                "fiaPath",
-                "lidarPath",
-                "unitName",
-                "savePath",
-                "nThread",
-            ]
-            for field, value in zip(fields, args):
-                setattr(self, field, value)
-            for field in fields:
-                if field in kwargs:
-                    setattr(self, field, kwargs[field])
-
-    class StubProjectArea:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            del args, kwargs
-
-    stub.ProjectSettings = StubProjectSettings
-    stub.ProjectArea = StubProjectArea
-    stub.load_project_area = lambda path: object()
-    stub.save_project_area = lambda project_area, path: Path(path).write_bytes(b"stub")
-    sys.modules["rxgaming_core"] = stub
+ensure_rxgaming_core_test_module()
 
 import persistence  # noqa: E402
 from gaming_ui.state import StandViewState  # noqa: E402
