@@ -84,6 +84,10 @@ class TreatmentReportTab(QWidget):
         self.target_label.setStyleSheet("font: 16pt;")
         self.target_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.target_label.setWordWrap(True)
+        self.stand_area_label = QLabel("")
+        self.stand_area_label.setStyleSheet("font: 16pt;")
+        self.stand_area_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.stand_area_label.setWordWrap(True)
 
         self.current_ba_figure = Figure()
         self.current_ba_canvas = FigureCanvas(self.current_ba_figure)
@@ -121,10 +125,12 @@ class TreatmentReportTab(QWidget):
         layout_grid.addWidget(self.displayed_ba_canvas, 2, 1)
         layout_grid.addWidget(self.displayed_mcs_canvas, 2, 2)
         layout_grid.addWidget(self.displayed_mcs_prop, 3, 2)
+        layout_grid.addWidget(self.stand_area_label, 4, 0, 1, 3)
         layout_grid.setRowStretch(0, 0)
         layout_grid.setRowStretch(1, 2)
         layout_grid.setRowStretch(2, 2)
         layout_grid.setRowStretch(3, 1)
+        layout_grid.setRowStretch(4, 0)
 
         layout = QVBoxLayout()
         layout.addLayout(layout_grid)

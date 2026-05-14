@@ -22,6 +22,16 @@
             "problemMatcher": []
         },
         {
+            "label": "Run Python Tests",
+            "type": "shell",
+            "command": "$env:PYTHONPATH='python'\n$env:PYTHONDONTWRITEBYTECODE='1'\nconda run -n rxgaming python -m unittest discover -s python/tests",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
             "label": "Update submodules",
             "type": "shell",
             "command": "git submodule update --remote --merge && git add src/lapisgis src/lico src/processedfolder src/rxtools",

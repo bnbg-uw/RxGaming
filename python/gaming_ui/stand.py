@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QHBoxLayout, QWidget
 from rxgaming_core import RxUnit, StructureSummary, TreatmentEngine
 from .sidebar import UnitSidebar
 from .state import StandViewState
-from .units import FEET_PER_METER, array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_value, label_for
+from .units import FEET_PER_METER, array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_area, format_value, label_for
 from .views import CutReportTab, StandPages, TreatmentReportTab, VisualizeTab
 
 
@@ -330,6 +330,7 @@ class StandViewCoordinator(QWidget):
             report.displayed_label.setText("Post-Treatment\n-")
             report.target_label.setText("Target\n-")
             report.displayed_mcs_prop.setText("")
+            report.stand_area_label.setText("")
             for canvas in (
                 report.current_ba_canvas,
                 report.current_mcs_canvas,
@@ -365,6 +366,7 @@ class StandViewCoordinator(QWidget):
             "Target\n"
             f"{self._format_structure_summary(unit.targetStructure, self.unit_system)}"
         )
+        report.stand_area_label.setText(f"Stand Area: {format_area(unit.areaHa, self.unit_system)}")
 
         self._configure_density_axes(
             report.current_ba_axes,
@@ -427,20 +429,26 @@ class StandViewCoordinator(QWidget):
         cut_points = unit.get_cut_taos()
         self._configure_density_axes(
             report.cut_axes,
-            f"Basal Area ({self._density_ba_unit_label()})",
+            f"DBH ({label_for('dbh', self.unit_system)})",
             "Kernel Density",
-            "Cut Trees Basal Area Distribution",
+            "Cut Trees Diameter Distribution",
         )
 
         if cut_points.ndim != 2 or cut_points.shape[0] == 0:
-            report.cut_summary.setText("Cut Trees:\nBA:")
+            report.cut_summary.setText(
+                f"Cut Trees:\nTotal BA:\t0.000 {label_for('ba', self.unit_system)}\n"
+                f"BA/Area:\t0.000 {label_for('ba', self.unit_system)}"
+            )
             report.cut_axes.text(0.5, 0.5, "No cut-tree data yet", ha="center", va="center")
         else:
+            cut_dbh = self._tree_dbh_distribution(cut_points)
+            self._draw_density(report.cut_axes, cut_dbh)
             cut_ba = self._tree_ba_distribution(cut_points)
-            self._draw_density(report.cut_axes, cut_ba)
+            total_ba = float(np.sum(cut_ba))
             ba_per_area = self._cut_ba_per_area(cut_ba, unit.areaHa)
             report.cut_summary.setText(
-                f"Cut Trees:\n\nBA:\t{ba_per_area:.3f} {label_for('ba', self.unit_system)}"
+                f"Cut Trees:\nTotal BA:\t{total_ba:.3f} {label_for('ba', self.unit_system)}\n"
+                f"BA/Area:\t{ba_per_area:.3f} {label_for('ba', self.unit_system)}"
             )
 
         report.cut_canvas.draw_idle()
@@ -602,6 +610,17 @@ class StandViewCoordinator(QWidget):
         if self.unit_system.value == "imperial":
             return ba_m2 * FEET_PER_METER * FEET_PER_METER
         return ba_m2
+
+    def _tree_dbh_distribution(self, points: object) -> np.ndarray:
+        point_array = np.asarray(points, dtype=float)
+        if point_array.ndim != 2 or point_array.shape[0] == 0 or point_array.shape[1] < 5:
+            return np.zeros(0, dtype=float)
+
+        dbh_cm = point_array[:, 4]
+        valid_dbh = dbh_cm[np.isfinite(dbh_cm) & (dbh_cm > 0.0)]
+        if valid_dbh.size == 0:
+            return np.zeros(0, dtype=float)
+        return array_to_display("dbh", valid_dbh, self.unit_system)
 
     def _cut_ba_per_area(self, cut_ba: np.ndarray, area_ha: float) -> float:
         if cut_ba.size == 0 or not np.isfinite(area_ha) or area_ha <= 0.0:

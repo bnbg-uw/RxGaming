@@ -25,6 +25,21 @@ class UnitSystem(StrEnum):
     IMPERIAL = "imperial"
 
 
+def area_to_display(metric_area_ha: float, unit_system: UnitSystem) -> float:
+    if unit_system == UnitSystem.IMPERIAL:
+        return metric_area_ha / TPA_PER_TPH
+    return metric_area_ha
+
+
+def area_label(unit_system: UnitSystem) -> str:
+    return "ac" if unit_system == UnitSystem.IMPERIAL else "ha"
+
+
+def format_area(metric_area_ha: float, unit_system: UnitSystem, precision: int = 2) -> str:
+    display_value = area_to_display(metric_area_ha, unit_system)
+    return f"{display_value:.{precision}f} {area_label(unit_system)}"
+
+
 def dbh_to_display(metric_cm: float, unit_system: UnitSystem) -> float:
     if unit_system == UnitSystem.IMPERIAL:
         return metric_cm / CENTIMETERS_PER_INCH

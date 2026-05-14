@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from rxgaming_core import RxUnit, StructureSummary
 from widgets import SliderWithValue
-from .units import UnitSystem, dbh_to_display, display_name_for, format_value, from_display, label_for
+from .units import UnitSystem, dbh_to_display, display_name_for, format_area, format_value, from_display, label_for
 
 
 class UnitListModel(QAbstractListModel):
@@ -40,8 +40,9 @@ class UnitListModel(QAbstractListModel):
         if role == Qt.ItemDataRole.ToolTipRole:
             return (
                 f"{unit.name}\n"
+                f"Area: {format_area(unit.areaHa, self._unit_system)}\n"
                 f"{label_for('tph', self._unit_system)}: {format_value('tph', unit.currentStructure.tph, self._unit_system)}\n"
-                f"{label_for('ba', self._unit_system)}: {format_value('ba', unit.currentStructure.ba, self._unit_system)}\n"
+                f"BA: {format_value('ba', unit.currentStructure.ba, self._unit_system)}\n"
                 f"MCS: {format_value('mcs', unit.currentStructure.mcs, self._unit_system)}\n"
                 f"CC: {format_value('cc', unit.currentStructure.cc, self._unit_system)}"
             )

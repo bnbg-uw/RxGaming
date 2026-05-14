@@ -16,12 +16,14 @@ if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
 try:
+    from PySide6.QtCore import Qt  # type: ignore
     from PySide6.QtWidgets import QApplication  # type: ignore
 except ModuleNotFoundError:
+    Qt = None
     QApplication = None
 
 if QApplication is not None:
-    from gaming_ui.sidebar import StructureInfo  # noqa: E402
+    from gaming_ui.sidebar import StructureInfo, UnitListModel  # noqa: E402
     units_spec = importlib.util.spec_from_file_location("gaming_ui.units", ROOT / "python" / "gaming_ui" / "units.py")
     if units_spec is None or units_spec.loader is None:
         raise RuntimeError("Could not load gaming_ui.units")
@@ -40,6 +42,7 @@ class FakeStructure:
 class FakeUnit:
     def __init__(self) -> None:
         self.name = "Unit 1"
+        self.areaHa = 4046.8564224 / 10000.0
         self.result = SimpleNamespace(name="success")
         self.currentStructure = FakeStructure(247.105381, 30.0, 4.0, 0.5)
         self.targetStructure = FakeStructure(247.105381, 30.0, 4.0, 0.5)
@@ -88,6 +91,15 @@ class TestSidebarUnits(unittest.TestCase):
         widget.update_for_unit(unit)
 
         self.assertEqual("50.00", widget.current_cc.text())
+
+    def test_unit_tooltip_includes_stand_area(self) -> None:
+        unit = FakeUnit()
+        model = UnitListModel([unit], units.UnitSystem.IMPERIAL)
+
+        tooltip = model.data(model.index(0, 0), role=Qt.ItemDataRole.ToolTipRole)
+
+        self.assertIn("Stand Area: 1.00 ac", tooltip)
+        self.assertIn("BA: 130.68", tooltip)
 
 
 if __name__ == "__main__":

@@ -16,16 +16,43 @@ persistent state information.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
+from pathlib import Path
+import sys
 from typing import Any, Callable, ClassVar, Mapping
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QFileInfo, Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QFileIconProvider
 from PySide6.QtWidgets import QMessageBox
 
 from widgets import QWindow
 
 
 SavedState = dict[str, Any]
+
+def _resolve_application_icon() -> QIcon:
+    icon_candidates = [
+        Path(__file__).resolve().parents[1] / "icons" / "Icon.ico",
+    ]
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        icon_candidates.insert(0, exe_dir / "icons" / "Icon.ico")
+
+    for candidate in icon_candidates:
+        if candidate.exists():
+            icon = QIcon(str(candidate))
+            if not icon.isNull():
+                return icon
+
+    if sys.platform.startswith("win") and getattr(sys, "frozen", False):
+        icon = QFileIconProvider().icon(QFileInfo(str(Path(sys.executable).resolve())))
+        if not icon.isNull():
+            return icon
+
+    return QIcon()
+
 
 def _get_qapplication() -> QApplication:
     instance = QApplication.instance()
@@ -34,6 +61,9 @@ def _get_qapplication() -> QApplication:
     else:
         assert isinstance(instance, QApplication)
         app = instance
+    icon = _resolve_application_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     # The activity framework controls shutdown explicitly, so root-window
     # transitions should not make Qt quit underneath us.
     app.setQuitOnLastWindowClosed(False)
@@ -84,12 +114,16 @@ class Activity(ABC):
         self._parent = parent_activity
         self._window_mode = window_mode
         self.window = QWindow()
+        if not Activity._app.windowIcon().isNull():
+            self.window.setWindowIcon(Activity._app.windowIcon())
         if self._window_mode is WindowMode.Modal:
             self.window.setWindowModality(Qt.WindowModality.ApplicationModal)  # TODO: set window hierarchy right so we can use WindowModal
         self.window.set_on_closed(self._on_window_close)
 
     def set_window(self, window: QWindow) -> None:
         self.window = window
+        if not Activity._app.windowIcon().isNull():
+            self.window.setWindowIcon(Activity._app.windowIcon())
         if self.window.on_closed is None:
             self.window.set_on_closed(self._on_window_close)
     
@@ -305,5 +339,7 @@ class Activity(ABC):
         if informative_text is not None:
             msg.setInformativeText(informative_text)
         msg.setWindowTitle(title)
+        if not Activity._app.windowIcon().isNull():
+            msg.setWindowIcon(Activity._app.windowIcon())
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg.exec()

@@ -42,6 +42,7 @@ except ModuleNotFoundError:
 if QApplication is not None:
     import activity as activity_module  # noqa: E402
     import persistence as persistence_module  # noqa: E402
+    from PySide6.QtGui import QIcon  # type: ignore  # noqa: E402
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is not available in the test runtime")
@@ -82,6 +83,23 @@ class TestSaveStateActivity(unittest.TestCase):
         activity_module.Activity._saved_state = {}
         activity_module.Activity._starting = False
         activity_module.Activity._stopping = False
+
+    def test_get_qapplication_applies_resolved_window_icon(self) -> None:
+        expected_icon = QIcon(str(ROOT / "icons" / "Icon.ico"))
+        original_resolve_icon = activity_module._resolve_application_icon
+        original_app = activity_module.QApplication.instance()
+
+        self.assertFalse(expected_icon.isNull())
+
+        try:
+            activity_module._resolve_application_icon = lambda: expected_icon
+            app = activity_module._get_qapplication()
+        finally:
+            activity_module._resolve_application_icon = original_resolve_icon
+
+        self.assertEqual(expected_icon.cacheKey(), app.windowIcon().cacheKey())
+        if original_app is not None:
+            original_app.setWindowIcon(QIcon())
 
     def test_no_clicked_quits_when_save_prompt_is_last_activity(self) -> None:
         activity = self._make_activity()

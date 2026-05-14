@@ -52,6 +52,15 @@ class TestUnits(unittest.TestCase):
         display_values = units.array_to_display("cc", values, units.UnitSystem.METRIC)
         self.assertEqual([10.0, 25.0, 90.0], list(display_values))
 
+    def test_area_to_display_uses_acres_in_imperial(self) -> None:
+        one_acre_in_ha = units.SQUARE_METER_PER_ACRE / units.SQUARE_METER_PER_HECTARE
+        display_value = units.area_to_display(one_acre_in_ha, units.UnitSystem.IMPERIAL)
+        self.assertAlmostEqual(1.0, display_value)
+
+    def test_format_area_includes_expected_unit_label(self) -> None:
+        self.assertEqual("1.00 ac", units.format_area(units.SQUARE_METER_PER_ACRE / units.SQUARE_METER_PER_HECTARE, units.UnitSystem.IMPERIAL))
+        self.assertEqual("1.00 ha", units.format_area(1.0, units.UnitSystem.METRIC))
+
     def test_constants_match_unit_hpp(self) -> None:
         unit_hpp = ROOT / "src" / "lapisgis" / "src" / "Unit.hpp"
         content = unit_hpp.read_text(encoding="utf-8")
