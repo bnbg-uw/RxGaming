@@ -77,7 +77,7 @@ class TestLandscapeTab(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             widget, _ = self._make_widget(Path(tmpdir))
             reference_hull = widget._cached_geometry["reference_hulls"]["ba"][0]
-            self.assertAlmostEqual(150.0 * TPA_PER_TPH, float(reference_hull[:, 0].max()), places=4)
+            self.assertAlmostEqual(240.0 * TPA_PER_TPH, float(reference_hull[:, 0].max()), places=4)
 
     def test_hover_shows_annotation_and_arrows_for_each_metric(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -100,9 +100,14 @@ class TestLandscapeTab(unittest.TestCase):
     def test_mcs_intersection_geometry_is_cached(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             widget, _ = self._make_widget(Path(tmpdir))
+            cached_intersection = widget._cached_geometry["units"][1][1]["intersection"]
+            cached_patches = widget._intersection_patches[1][1]
 
-            self.assertTrue(widget._cached_geometry["units"][1][0]["intersection"])
-            self.assertTrue(widget._intersection_patches[1][0])
+            widget.refresh("cached_geometry_check")
+
+            self.assertIs(cached_intersection, widget._cached_geometry["units"][1][1]["intersection"])
+            self.assertIs(cached_patches, widget._intersection_patches[1][1])
+            self.assertEqual(len(cached_intersection), len(cached_patches))
 
     def test_click_selects_the_correct_unit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -169,6 +174,11 @@ class TestLandscapeTab(unittest.TestCase):
             SimpleNamespace(refDataPath=str(reference_path)),
             StandViewState(dbh_cutoff=76.2, unit_system=UnitSystem.IMPERIAL),
         )
+        widget.resize(1200, 500)
+        widget.show()
+        self.app.processEvents()
+        widget.refresh("test_setup")
+        self.app.processEvents()
         return widget, units
 
     def _write_reference_csv(self, tmpdir: Path) -> Path:

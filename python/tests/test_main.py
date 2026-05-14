@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 
 if QApplication is not None:
     import activity as activity_module  # noqa: E402
+    import loadstateactivity as loadstateactivity_module  # noqa: E402
 
     MAIN_SPEC = importlib.util.spec_from_file_location("rxgaming_main", PYTHON_DIR / "__main__.py")
     assert MAIN_SPEC is not None
@@ -49,7 +50,7 @@ class TestAppContext(unittest.TestCase):
 
         def fake_start_activity(activity_class, *args, **kwargs):
             start_calls.append(activity_class)
-            if activity_class is activity_module.LoadStateActivity:
+            if activity_class is loadstateactivity_module.LoadStateActivity:
                 activity_module.Activity._saved_state = {"LoadStateContinue": False}
             return None
 
@@ -58,7 +59,7 @@ class TestAppContext(unittest.TestCase):
         context = main_module.AppContext()
         context.run(prop_table_path="prop.csv", fia_path="fia")
 
-        self.assertEqual([activity_module.LoadStateActivity], start_calls)
+        self.assertEqual([loadstateactivity_module.LoadStateActivity], start_calls)
         self.assertFalse(activity_module.Activity.try_to_save)
 
     def test_run_starts_project_settings_after_new_project_choice(self) -> None:
@@ -66,7 +67,7 @@ class TestAppContext(unittest.TestCase):
 
         def fake_start_activity(activity_class, *args, **kwargs):
             start_calls.append(activity_class)
-            if activity_class is activity_module.LoadStateActivity:
+            if activity_class is loadstateactivity_module.LoadStateActivity:
                 activity_module.Activity._saved_state = {"LoadStateContinue": True}
             return None
 
@@ -76,7 +77,7 @@ class TestAppContext(unittest.TestCase):
         context.run(prop_table_path="prop.csv", fia_path="fia")
 
         self.assertEqual(
-            [activity_module.LoadStateActivity, main_module.ProjectSettingsActivity],
+            [loadstateactivity_module.LoadStateActivity, main_module.ProjectSettingsActivity],
             start_calls,
         )
         self.assertTrue(activity_module.Activity.try_to_save)

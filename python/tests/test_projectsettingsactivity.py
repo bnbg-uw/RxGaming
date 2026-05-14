@@ -41,6 +41,7 @@ if QApplication is not None:
     import activity as activity_module  # noqa: E402
     import gamingactivity as gamingactivity_module  # noqa: E402
     import projectsettingsactivity as projectsettingsactivity_module  # noqa: E402
+    from activity import WindowMode  # noqa: E402
 
 
 @unittest.skipIf(QApplication is None, "PySide6 is not available in the test runtime")
@@ -63,7 +64,9 @@ class TestProjectSettingsActivity(unittest.TestCase):
         self.original_finish_project_area_build = projectsettingsactivity_module.finish_project_area_build
         self.original_start_activity = activity_module.Activity.start_activity
         self.original_notify_exception = projectsettingsactivity_module.ProjectSettingsActivity.notify_exception
+        self.original_notify_save_success = projectsettingsactivity_module.ProjectSettingsActivity.notify_save_success
         self.original_get_save_file_name = qt_widgets.QFileDialog.getSaveFileName
+        projectsettingsactivity_module.ProjectSettingsActivity.notify_save_success = staticmethod(lambda text: None)
 
     def tearDown(self) -> None:
         projectsettingsactivity_module.ProjectSettings = self.original_project_settings
@@ -73,6 +76,7 @@ class TestProjectSettingsActivity(unittest.TestCase):
         projectsettingsactivity_module.finish_project_area_build = self.original_finish_project_area_build
         activity_module.Activity.start_activity = self.original_start_activity
         projectsettingsactivity_module.ProjectSettingsActivity.notify_exception = self.original_notify_exception
+        projectsettingsactivity_module.ProjectSettingsActivity.notify_save_success = self.original_notify_save_success
         qt_widgets.QFileDialog.getSaveFileName = self.original_get_save_file_name
 
     class FakeBuildSnapshot:
@@ -577,7 +581,7 @@ class TestGamingActivity(unittest.TestCase):
             original_get_existing_directory = qt_widgets.QFileDialog.getExistingDirectory
             qt_widgets.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
             try:
-                activity = gamingactivity_module.GamingActivity(None, gamingactivity_module.WindowMode.SimultaneousParent)
+                activity = gamingactivity_module.GamingActivity(None, WindowMode.SimultaneousParent)
                 activity.on_start(
                     {
                         "ProjectSettings": FakeProjectSettings(),
@@ -650,7 +654,7 @@ class TestGamingActivity(unittest.TestCase):
             original_get_existing_directory = qt_widgets.QFileDialog.getExistingDirectory
             qt_widgets.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
             try:
-                activity = gamingactivity_module.GamingActivity(None, gamingactivity_module.WindowMode.SimultaneousParent)
+                activity = gamingactivity_module.GamingActivity(None, WindowMode.SimultaneousParent)
                 activity.on_start(
                     {
                         "ProjectSettings": FakeProjectSettings(),
@@ -707,7 +711,7 @@ class TestGamingActivity(unittest.TestCase):
         gamingactivity_module.GamingTabs = FakeTabs
         gamingactivity_module.export_georeferenced_raster = lambda tabs, window: triggered.append((tabs, window))
 
-        activity = gamingactivity_module.GamingActivity(None, gamingactivity_module.WindowMode.SimultaneousParent)
+        activity = gamingactivity_module.GamingActivity(None, WindowMode.SimultaneousParent)
         activity.on_start(
             {
                 "ProjectSettings": FakeProjectSettings(),

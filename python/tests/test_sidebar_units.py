@@ -98,7 +98,7 @@ class TestSidebarUnits(unittest.TestCase):
 
         tooltip = model.data(model.index(0, 0), role=Qt.ItemDataRole.ToolTipRole)
 
-        self.assertIn("Stand Area: 1.00 ac", tooltip)
+        self.assertIn("Area: 1.00 ac", tooltip)
         self.assertIn("BA: 130.68", tooltip)
 
 

@@ -25,7 +25,9 @@ except ModuleNotFoundError:
 
 if QApplication is not None:
     import activity as activity_module  # noqa: E402
+    import loadstateactivity as loadstateactivity_module  # noqa: E402
     import persistence as persistence_module  # noqa: E402
+    import savestateactivity as savestateactivity_module  # noqa: E402
     from PySide6.QtGui import QIcon  # type: ignore  # noqa: E402
 
 
@@ -48,18 +50,18 @@ class TestSaveStateActivity(unittest.TestCase):
         activity_module.Activity._stopping = False
         activity_module.Activity.try_to_save = False
 
-        self.original_get_save_file_name = activity_module.QFileDialog.getSaveFileName
-        self.original_get_existing_directory = activity_module.QFileDialog.getExistingDirectory
+        self.original_get_save_file_name = savestateactivity_module.QFileDialog.getSaveFileName
+        self.original_get_existing_directory = savestateactivity_module.QFileDialog.getExistingDirectory
         self.original_show_message = activity_module.Activity._show_message
         self.original_quit = activity_module.Activity._app.quit
-        self.original_write_file = activity_module.SaveStateActivity.write_file
+        self.original_write_file = savestateactivity_module.SaveStateActivity.write_file
 
     def tearDown(self) -> None:
-        activity_module.QFileDialog.getSaveFileName = self.original_get_save_file_name
-        activity_module.QFileDialog.getExistingDirectory = self.original_get_existing_directory
+        savestateactivity_module.QFileDialog.getSaveFileName = self.original_get_save_file_name
+        savestateactivity_module.QFileDialog.getExistingDirectory = self.original_get_existing_directory
         activity_module.Activity._show_message = self.original_show_message
         activity_module.Activity._app.quit = self.original_quit
-        activity_module.SaveStateActivity.write_file = self.original_write_file
+        savestateactivity_module.SaveStateActivity.write_file = self.original_write_file
 
         for current in list(activity_module.Activity._activities):
             current.window.close()
@@ -114,7 +116,7 @@ class TestSaveStateActivity(unittest.TestCase):
     def test_yes_clicked_stays_open_when_user_cancels_save_dialog(self) -> None:
         activity = self._make_activity()
         messages: list[tuple[str, str]] = []
-        activity_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("", ""))
+        savestateactivity_module.QFileDialog.getSaveFileName = staticmethod(lambda *args, **kwargs: ("", ""))
         activity_module.Activity._show_message = staticmethod(
             lambda icon, title, text, informative_text=None: messages.append((title, text))
         )
@@ -139,7 +141,7 @@ class TestSaveStateActivity(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "settings.json"
-            activity_module.QFileDialog.getSaveFileName = staticmethod(
+            savestateactivity_module.QFileDialog.getSaveFileName = staticmethod(
                 lambda *args, **kwargs: (str(save_path), "JSON files (*.json)")
             )
 
@@ -161,8 +163,8 @@ class TestSaveStateActivity(unittest.TestCase):
             }
         )
         captured_paths: list[str] = []
-        activity_module.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: "C:/tmp/demo-project")
-        activity_module.SaveStateActivity.write_file = staticmethod(lambda path, saved_state: captured_paths.append(str(path)))
+        savestateactivity_module.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: "C:/tmp/demo-project")
+        savestateactivity_module.SaveStateActivity.write_file = staticmethod(lambda path, saved_state: captured_paths.append(str(path)))
 
         activity.yes_clicked()
         self.app.processEvents()
@@ -172,8 +174,8 @@ class TestSaveStateActivity(unittest.TestCase):
     def _make_activity(
         self,
         saved_state: dict[str, object] | None = None,
-    ) -> activity_module.SaveStateActivity:
-        activity = activity_module.SaveStateActivity(None, activity_module.WindowMode.SimultaneousParent)
+    ) -> savestateactivity_module.SaveStateActivity:
+        activity = savestateactivity_module.SaveStateActivity(None, activity_module.WindowMode.SimultaneousParent)
         activity.on_start(saved_state or {})
         activity.window.show()
         activity_module.Activity._activities.append(activity)
@@ -201,15 +203,15 @@ class TestLoadStateActivity(unittest.TestCase):
         activity_module.Activity._activities = []
         activity_module.Activity._saved_state = {}
         self.original_show_message = activity_module.Activity._show_message
-        self.original_get_existing_directory = activity_module.QFileDialog.getExistingDirectory
-        self.original_get_open_file_name = activity_module.QFileDialog.getOpenFileName
+        self.original_get_existing_directory = loadstateactivity_module.QFileDialog.getExistingDirectory
+        self.original_get_open_file_name = loadstateactivity_module.QFileDialog.getOpenFileName
         self.original_read_project_settings_file = persistence_module.read_project_settings_file
         self.original_read_project_snapshot = persistence_module.read_project_snapshot
 
     def tearDown(self) -> None:
         activity_module.Activity._show_message = self.original_show_message
-        activity_module.QFileDialog.getExistingDirectory = self.original_get_existing_directory
-        activity_module.QFileDialog.getOpenFileName = self.original_get_open_file_name
+        loadstateactivity_module.QFileDialog.getExistingDirectory = self.original_get_existing_directory
+        loadstateactivity_module.QFileDialog.getOpenFileName = self.original_get_open_file_name
         persistence_module.read_project_settings_file = self.original_read_project_settings_file
         persistence_module.read_project_snapshot = self.original_read_project_snapshot
         for current in list(activity_module.Activity._activities):
@@ -221,7 +223,7 @@ class TestLoadStateActivity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = Path(tmpdir) / "dry-creek-template.json"
             settings_path.write_text("{}", encoding="utf-8")
-            activity_module.QFileDialog.getOpenFileName = staticmethod(
+            loadstateactivity_module.QFileDialog.getOpenFileName = staticmethod(
                 lambda *args, **kwargs: (str(settings_path), "JSON files (*.json)")
             )
             persistence_module.read_project_settings_file = lambda path: SimpleNamespace(
@@ -241,7 +243,7 @@ class TestLoadStateActivity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir) / "demo-project"
             project_root.mkdir()
-            activity_module.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
+            loadstateactivity_module.QFileDialog.getExistingDirectory = staticmethod(lambda *args, **kwargs: str(project_root))
             persistence_module.read_project_snapshot = lambda path: SimpleNamespace(
                 project_root=Path(path),
                 project_settings={"name": "Demo"},
@@ -263,7 +265,7 @@ class TestLoadStateActivity(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             bad_path = Path(tmpdir) / "legacy.dat"
             bad_path.write_text("", encoding="utf-8")
-            activity_module.QFileDialog.getOpenFileName = staticmethod(
+            loadstateactivity_module.QFileDialog.getOpenFileName = staticmethod(
                 lambda *args, **kwargs: (str(bad_path), "All files (*)")
             )
             activity_module.Activity._show_message = staticmethod(
@@ -293,8 +295,8 @@ class TestLoadStateActivity(unittest.TestCase):
 
         self.assertFalse(activity_module.Activity._saved_state["LoadStateContinue"])
 
-    def _make_activity(self) -> activity_module.LoadStateActivity:
-        activity = activity_module.LoadStateActivity(None, activity_module.WindowMode.SimultaneousParent)
+    def _make_activity(self) -> loadstateactivity_module.LoadStateActivity:
+        activity = loadstateactivity_module.LoadStateActivity(None, activity_module.WindowMode.SimultaneousParent)
         activity.on_start({})
         activity.window.show()
         activity_module.Activity._activities.append(activity)
