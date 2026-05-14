@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractListModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -23,6 +23,8 @@ from .units import UnitSystem, dbh_to_display, display_name_for, format_area, fo
 
 
 class UnitListModel(QAbstractListModel):
+    FILTER_ROLE = Qt.ItemDataRole.UserRole + 1
+
     def __init__(self, rx_units: list[RxUnit], unit_system: UnitSystem) -> None:
         super().__init__()
         self._rx_units = rx_units
@@ -37,6 +39,8 @@ class UnitListModel(QAbstractListModel):
         unit = self._rx_units[index.row()]
         if role == Qt.ItemDataRole.DisplayRole:
             return unit.name
+        if role == self.FILTER_ROLE:
+            return unit.name
         if role == Qt.ItemDataRole.ToolTipRole:
             return (
                 f"{unit.name}\n"
@@ -50,6 +54,33 @@ class UnitListModel(QAbstractListModel):
 
     def refresh(self) -> None:
         self.layoutChanged.emit()
+
+
+class UnitFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self._filter_text = ""
+        self.setFilterRole(UnitListModel.FILTER_ROLE)
+        self.setDynamicSortFilter(True)
+
+    def set_filter_text(self, text: str) -> None:
+        normalized = text.casefold().strip()
+        if normalized == self._filter_text:
+            return
+        self._filter_text = normalized
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+        if not self._filter_text:
+            return True
+        source_model = self.sourceModel()
+        if source_model is None:
+            return True
+        source_index = source_model.index(source_row, 0, source_parent)
+        value = source_model.data(source_index, self.filterRole())
+        if not isinstance(value, str):
+            return False
+        return self._filter_text in value.casefold()
 
 
 class StructureInfo(QWidget):
@@ -298,14 +329,20 @@ class UnitSidebar(QWidget):
     def __init__(self, rx_units: list[RxUnit], unit_system: UnitSystem) -> None:
         super().__init__()
         self.model = UnitListModel(rx_units, unit_system)
+        self.filtered_model = UnitFilterProxyModel()
+        self.filtered_model.setSourceModel(self.model)
+        self.unit_search = QLineEdit()
+        self.unit_search.setPlaceholderText("Search units...")
+        self.unit_search.textChanged.connect(self.set_unit_filter_text)
         self.unit_list_view = QListView()
-        self.unit_list_view.setModel(self.model)
+        self.unit_list_view.setModel(self.filtered_model)
         self.unit_list_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.structure_info = StructureInfo(unit_system)
         self.stand_controls = StandControls(unit_system)
 
         units_group = QGroupBox("UNITS")
         units_layout = QVBoxLayout()
+        units_layout.addWidget(self.unit_search)
         units_layout.addWidget(self.unit_list_view, 1)
         units_group.setLayout(units_layout)
 
@@ -325,3 +362,6 @@ class UnitSidebar(QWidget):
         layout.addWidget(controls_group)
         self.setMaximumWidth(290)
         self.setLayout(layout)
+
+    def set_unit_filter_text(self, text: str) -> None:
+        self.filtered_model.set_filter_text(text)

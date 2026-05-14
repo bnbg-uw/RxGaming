@@ -46,6 +46,7 @@ class StandViewCoordinator(QWidget):
         self._raster_mode_key: tuple[int, bool] | None = None
         self._raster_scale_key: tuple[float | int | None, float | int | None] | None = None
         self._basin_colormap = self._build_basin_colormap()
+        self._syncing_sidebar_selection = False
 
         self.sidebar = UnitSidebar(rx_units, self.unit_system)
         self.visualize_tab = VisualizeTab(self.unit_system)
@@ -132,12 +133,25 @@ class StandViewCoordinator(QWidget):
         if not self.rx_units:
             return
         row = max(0, min(index, len(self.rx_units) - 1))
-        self.sidebar.unit_list_view.setCurrentIndex(self.sidebar.model.index(row, 0))
+        source_index = self.sidebar.model.index(row, 0)
+        filtered_index = self.sidebar.filtered_model.mapFromSource(source_index)
+        self._syncing_sidebar_selection = True
+        try:
+            if filtered_index.isValid():
+                self.sidebar.unit_list_view.setCurrentIndex(filtered_index)
+            else:
+                selection_model = self.sidebar.unit_list_view.selectionModel()
+                if selection_model is not None:
+                    selection_model.clearCurrentIndex()
+                self.sidebar.unit_list_view.clearSelection()
+        finally:
+            self._syncing_sidebar_selection = False
 
     def _connect_signals(self) -> None:
         selection_model = self.sidebar.unit_list_view.selectionModel()
         selection_model.currentChanged.connect(self._on_unit_changed)
-
+        self.sidebar.unit_search.textChanged.disconnect(self.sidebar.set_unit_filter_text)
+        self.sidebar.unit_search.textChanged.connect(self._on_unit_filter_changed)
         self.sidebar.structure_info.set_targets_changed_callback(self._on_targets_changed)
         self.sidebar.stand_controls.raster_mode.currentIndexChanged.connect(self._on_raster_mode_changed)
         self.sidebar.stand_controls.dbh_cutoff.valueChanged.connect(self._on_cutoff_changed)
@@ -157,18 +171,35 @@ class StandViewCoordinator(QWidget):
 
     def _on_unit_changed(self, current: object, previous: object) -> None:
         del previous
-        row = current.row() if getattr(current, "isValid", lambda: False)() else 0
-        self.state.selected_unit_index = max(0, row)
+        if self._syncing_sidebar_selection:
+            return
+        if not getattr(current, "isValid", lambda: False)():
+            return
+        source_index = self.sidebar.filtered_model.mapToSource(current)
+        if not source_index.isValid():
+            return
+        self.state.selected_unit_index = max(0, source_index.row())
         self._mark_all_pages_dirty()
         self.refresh_all(trigger="unit_changed")
         self._notify_state_changed("unit_changed")
 
     def _on_targets_changed(self) -> None:
         self.sidebar.model.refresh()
+        self._sync_sidebar_selection_to_state()
         self._mark_all_pages_dirty()
         self.refresh_all(trigger="targets_changed")
         self._notify_landscape_invalidated()
         self._notify_state_changed("targets_changed")
+
+    def _on_unit_filter_changed(self, text: str) -> None:
+        preserved_index = self.state.selected_unit_index
+        self._syncing_sidebar_selection = True
+        try:
+            self.sidebar.set_unit_filter_text(text)
+        finally:
+            self._syncing_sidebar_selection = False
+        self.state.selected_unit_index = preserved_index
+        self._sync_sidebar_selection_to_state()
 
     def _on_raster_mode_changed(self, index: int) -> None:
         self.state.raster_mode = index
@@ -218,6 +249,11 @@ class StandViewCoordinator(QWidget):
             return
         self.sidebar.structure_info.update_for_unit(self.current_unit())
         self.refresh_current_page(trigger=trigger)
+
+    def _sync_sidebar_selection_to_state(self) -> None:
+        if not self.rx_units:
+            return
+        self.select_unit(self.state.selected_unit_index)
 
     def refresh_current_page(self, trigger: str = "refresh_current_page") -> None:
         if self.state.active_page == 1:
