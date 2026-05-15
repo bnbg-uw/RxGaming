@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import csv
 from dataclasses import dataclass
@@ -13,6 +14,9 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 from gaming_ui.tabs import GamingTabs
 from gaming_ui.units import UnitSystem, array_to_display, display_name_for
 
+if TYPE_CHECKING:
+    from matplotlib.colors import Colormap
+    from matplotlib.image import AxesImage
 
 _BASIN_PALETTE_SIZE = 64
 _CLUMP_COLORS = ("white", "#7bc043", "#fdf498", "#f37736", "#ee4035")
@@ -200,7 +204,7 @@ def _render_georeferenced_raster(unit: object, option: _GeoRasterOption, unit_sy
     canvas = FigureCanvasAgg(figure)
     axes = figure.add_subplot(111)
     figure.subplots_adjust(left=0.03, right=0.84, top=0.94, bottom=0.04)
-    colorbar_axes = figure.add_axes([0.86, 0.04, 0.03, 0.90])
+    colorbar_axes = figure.add_axes((0.86, 0.04, 0.03, 0.90))
     colorbar_axes.set_visible(False)
 
     image_artist = None
@@ -357,7 +361,7 @@ def _safe_output_name(name: str) -> str:
     return sanitized or "unit"
 
 
-def _build_basin_colormap() -> object:
+def _build_basin_colormap() -> Colormap:
     from matplotlib.colors import ListedColormap, hsv_to_rgb
 
     hues = (np.arange(_BASIN_PALETTE_SIZE, dtype=float) * 0.6180339887498949) % 1.0
@@ -399,7 +403,7 @@ def _categorical_basin_display(data: np.ndarray, show_treatment: bool) -> np.ma.
     return np.ma.masked_array(hashed, mask=mask)
 
 
-def _set_dynamic_limits(image_artist: object, data: np.ndarray, lower_bound: float | None = None) -> None:
+def _set_dynamic_limits(image_artist: AxesImage, data: np.ndarray, lower_bound: float | None = None) -> None:
     min_value, max_value = _array_bounds(data)
     if lower_bound is not None:
         min_value = lower_bound
