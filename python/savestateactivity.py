@@ -6,6 +6,7 @@ from typing import Any, Mapping
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout
 
 from activity import Activity, SavedState
+from gaming_ui.state import parse_stand_view_state_payload
 
 class SaveStateActivity(Activity):
     """Prompts user to store the state instance dictionary."""
@@ -108,7 +109,7 @@ class SaveStateActivity(Activity):
                 app_version=Activity.version,
                 project_settings=project_settings,
                 project_area=project_area,
-                session_state=session_state if isinstance(session_state, Mapping) else {},
+                session_state=parse_stand_view_state_payload(session_state),
                 form_state=form_state if isinstance(form_state, Mapping) else None,
             )
             return

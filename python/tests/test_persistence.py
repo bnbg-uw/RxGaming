@@ -188,7 +188,16 @@ class TestPersistence(unittest.TestCase):
             root = Path(project_root)
             root.mkdir(parents=True, exist_ok=True)
             (root / persistence.PROJECT_MANIFEST_NAME).write_text("{}", encoding="utf-8")
-            (root / persistence.SESSION_FILE_NAME).write_text("{}", encoding="utf-8")
+            (root / persistence.SESSION_FILE_NAME).write_text(
+                json.dumps(
+                    {
+                        "format": "rxgaming-session",
+                        "schema_version": persistence.SCHEMA_VERSION,
+                        "session_state": dict(session_state),
+                    }
+                ),
+                encoding="utf-8",
+            )
             return root
 
         original_write_project_snapshot = persistence.write_project_snapshot
@@ -222,6 +231,69 @@ class TestPersistence(unittest.TestCase):
                 self.assertEqual(updated_state.to_dict(), saved_snapshots[1]["session_state"])
         finally:
             persistence.write_project_snapshot = original_write_project_snapshot
+
+    def test_project_snapshot_read_rejects_malformed_session_payload(self) -> None:
+        fake_project_area = object()
+
+        def fake_load_project_area(path: str) -> object:
+            self.assertTrue(Path(path).exists())
+            return fake_project_area
+
+        persistence.load_project_area = fake_load_project_area
+
+        project_settings = FakeProjectSettings(
+            "Demo",
+            "units.shp",
+            "reference.csv",
+            "props.csv",
+            "fia",
+            "lidar-folder",
+            "NAME",
+            "project-folder",
+            8,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir) / "project-folder"
+            project_root.mkdir()
+            (project_root / persistence.PROJECT_MANIFEST_NAME).write_text(
+                json.dumps(
+                    {
+                        "format": "rxgaming-project",
+                        "schema_version": persistence.SCHEMA_VERSION,
+                        "files": {
+                            "settings": persistence.SETTINGS_FILE_NAME,
+                            "session": persistence.SESSION_FILE_NAME,
+                            "project_area": persistence.PROJECTAREA_FILE_NAME,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (project_root / persistence.SETTINGS_FILE_NAME).write_text(
+                json.dumps(
+                    {
+                        "format": "rxgaming-project-settings",
+                        "schema_version": persistence.SCHEMA_VERSION,
+                        "project_settings": persistence.serialize_project_settings(project_settings),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (project_root / persistence.SESSION_FILE_NAME).write_text(
+                json.dumps(
+                    {
+                        "format": "rxgaming-session",
+                        "schema_version": persistence.SCHEMA_VERSION,
+                        "session_state": {"active_page": "one"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (project_root / persistence.PROJECTAREA_FILE_NAME).write_bytes(b"native-snapshot")
+
+            with self.assertRaisesRegex(ValueError, "active_page"):
+                persistence.read_project_snapshot(project_root)
 
 
 if __name__ == "__main__":

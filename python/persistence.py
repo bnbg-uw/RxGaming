@@ -7,7 +7,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Mapping
 
-from gaming_ui.state import GamingSessionPersistence, StandViewState
+from gaming_ui.state import (
+    GamingSessionPersistence,
+    StandViewState,
+    StandViewStatePayload,
+    parse_stand_view_state_payload,
+)
 from rxgaming_core import ProjectSettings, ProjectArea, load_project_area, save_project_area
 
 
@@ -29,7 +34,7 @@ class LoadedProjectSnapshot:
     project_root: Path
     project_settings: ProjectSettings
     project_area: ProjectArea
-    session_state: dict[str, Any]
+    session_state: StandViewStatePayload
     form_state: dict[str, Any] | None = None
 
 
@@ -170,7 +175,7 @@ def write_project_snapshot(
     app_version: str,
     project_settings: ProjectSettings,
     project_area: ProjectArea,
-    session_state: Mapping[str, Any],
+    session_state: StandViewStatePayload,
     form_state: Mapping[str, Any] | None = None,
 ) -> Path:
     root = _normalize_project_root(project_root)
@@ -249,9 +254,10 @@ def read_project_snapshot(path: str | Path) -> LoadedProjectSnapshot:
         raise ValueError("Project snapshot is missing serialized ProjectSettings.")
 
     session_payload = _read_json(session_path)
-    session_state = session_payload.get("session_state", {})
-    if not isinstance(session_state, dict):
-        raise ValueError("Project snapshot session.json is malformed.")
+    try:
+        session_state = parse_stand_view_state_payload(session_payload.get("session_state"), strict=True)
+    except ValueError as exc:
+        raise ValueError(f"Project snapshot session.json is malformed. {exc}") from exc
 
     form_state = settings_payload.get("form_state")
     if form_state is not None and not isinstance(form_state, dict):
@@ -283,7 +289,7 @@ class ProjectSnapshotSessionPersistence(GamingSessionPersistence):
         self.form_state = dict(form_state) if form_state is not None else None
 
     def load_initial_state(self, saved_state: dict[str, object]) -> StandViewState:
-        return StandViewState.from_saved_state(saved_state)
+        return StandViewState.from_dict(parse_stand_view_state_payload(saved_state.get("SessionState")))
 
     def initialize_snapshot(self, state: StandViewState) -> None:
         write_project_snapshot(
