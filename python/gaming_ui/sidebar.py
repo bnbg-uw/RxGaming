@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtWidgets import (
@@ -19,8 +19,10 @@ from PySide6.QtWidgets import (
 
 from rxgaming_core import RxUnit, StructureSummary
 from widgets import SliderWithValue
-from .units import UnitSystem, dbh_to_display, display_name_for, format_area, format_value, from_display, label_for
+from .units import UnitSystem, dbh_to_display, display_name_for, format_area, format_value, from_display, label_for, STRUCTURE_METRICS
 
+if TYPE_CHECKING:
+    from PySide6.QtCore import QPersistentModelIndex
 
 class UnitListModel(QAbstractListModel):
     FILTER_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -30,10 +32,10 @@ class UnitListModel(QAbstractListModel):
         self._rx_units = rx_units
         self._unit_system = unit_system
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._rx_units)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
         unit = self._rx_units[index.row()]
@@ -67,10 +69,17 @@ class UnitFilterProxyModel(QSortFilterProxyModel):
         normalized = text.casefold().strip()
         if normalized == self._filter_text:
             return
+        begin_filter_change = getattr(self, "beginFilterChange", None)
+        end_filter_change = getattr(self, "endFilterChange", None)
+        if callable(begin_filter_change) and callable(end_filter_change):
+            begin_filter_change()
         self._filter_text = normalized
-        self.invalidateFilter()
+        if callable(begin_filter_change) and callable(end_filter_change):
+            end_filter_change(QSortFilterProxyModel.Direction.Rows)
+        else:
+            self.invalidateFilter()
 
-    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex | QPersistentModelIndex) -> bool:
         if not self._filter_text:
             return True
         source_model = self.sourceModel()
@@ -187,9 +196,8 @@ class StructureInfo(QWidget):
             self._restore_target_value(metric_index)
             return
 
-        attributes = ["tph", "ba", "mcs", "cc"]
-        converted_value = from_display(attributes[metric_index], value, self._unit_system)
-        setattr(self._unit.targetStructure, attributes[metric_index], converted_value)
+        converted_value = from_display(STRUCTURE_METRICS[metric_index], value, self._unit_system)
+        setattr(self._unit.targetStructure, STRUCTURE_METRICS[metric_index], converted_value)
         self._restore_target_value(metric_index)
         if self._targets_changed_callback is not None:
             self._targets_changed_callback()
@@ -203,10 +211,9 @@ class StructureInfo(QWidget):
             self._unit.targetStructure.mcs,
             self._unit.targetStructure.cc,
         ]
-        metric_kinds = ["tph", "ba", "mcs", "cc"]
         self._updating = True
         self.target_edits[metric_index].setText(
-            format_value(metric_kinds[metric_index], values[metric_index], self._unit_system)
+            format_value(STRUCTURE_METRICS[metric_index], values[metric_index], self._unit_system)
         )
         self._updating = False
 
@@ -220,7 +227,7 @@ class StructureInfo(QWidget):
 
         for label_widget, metric_kind, value in zip(
             self.treated_values,
-            ["tph", "ba", "mcs", "cc"],
+            STRUCTURE_METRICS,
             [treated.tph, treated.ba, treated.mcs, treated.cc],
         ):
             label_widget.setText(format_value(metric_kind, value, self._unit_system))

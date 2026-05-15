@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING, cast
 
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -18,11 +18,12 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from rxgaming_core import ProjectSettings, RxUnit
 from .state import StandViewState
-from .units import array_to_display, display_name_for
+from .units import array_to_display, display_name_for, MetricKind
 
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon as ShapelyPolygon
 
-
+if TYPE_CHECKING:
+    from matplotlib.backend_bases import MouseEvent, Event
 class LandscapeReferenceTab(QWidget):
     _REFERENCE_COLOR = "#f28263"
     _REFERENCE_FILL_ALPHA = 0.35
@@ -37,7 +38,7 @@ class LandscapeReferenceTab(QWidget):
         self._state = state
         self._unit_system = state.unit_system
         self._on_unit_selected: Callable[[int], None] | None = None
-        self._metric_names = ["ba", "mcs", "cc"]
+        self._metric_names : list[MetricKind] = ["ba", "mcs", "cc"]
         self._metric_labels = ["Basal Area", "Mean Clump Size", "Canopy Cover"]
         self._reference = self._load_reference_points(project_settings.refDataPath)
         self._decision_spaces = self._load_decision_spaces()
@@ -325,7 +326,8 @@ class LandscapeReferenceTab(QWidget):
             treated_arrow.set_positions((target_x, target_y), (treated_x, treated_y))
             treated_arrow.set_visible(True)
 
-    def _on_hover(self, event: object) -> None:
+    def _on_hover(self, event: Event) -> None:
+        event = cast("MouseEvent", event)
         inaxes = getattr(event, "inaxes", None)
         self._hide_hover_state()
         if inaxes not in self._axes:
@@ -342,7 +344,8 @@ class LandscapeReferenceTab(QWidget):
         self._show_hover_state(point_index, axis_index)
         self.canvas.draw_idle()
 
-    def _on_click(self, event: object) -> None:
+    def _on_click(self, event: Event) -> None:
+        event = cast("MouseEvent", event)
         if getattr(event, "button", None) != 1:
             return
         for line in self._unit_lines:
@@ -497,5 +500,5 @@ class LandscapeReferenceTab(QWidget):
             patches.append(patch)
         return patches
 
-    def array_to_display(self, values: np.ndarray, metric_kind: str) -> np.ndarray:
+    def array_to_display(self, values: np.ndarray, metric_kind: MetricKind) -> np.ndarray:
         return array_to_display(metric_kind, values, self._unit_system)

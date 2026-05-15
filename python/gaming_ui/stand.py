@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +17,10 @@ from .state import StandViewState
 from .units import FEET_PER_METER, array_to_display, dbh_from_display, dbh_to_display, display_name_for, format_area, format_value, label_for
 from .views import CutReportTab, StandPages, TreatmentReportTab, VisualizeTab
 
+if TYPE_CHECKING:
+    from PySide6.QtCore import QModelIndex, QPersistentModelIndex
+    from matplotlib.axes import Axes
+    from .units import UnitSystem
 
 class StandViewCoordinator(QWidget):
     _SLIDER_DEBOUNCE_MS = 150
@@ -169,7 +174,7 @@ class StandViewCoordinator(QWidget):
             self.select_unit(self.state.selected_unit_index)
         self.refresh_all(trigger="restore_state")
 
-    def _on_unit_changed(self, current: object, previous: object) -> None:
+    def _on_unit_changed(self, current: QModelIndex | QPersistentModelIndex, previous: QModelIndex | QPersistentModelIndex) -> None:
         del previous
         if self._syncing_sidebar_selection:
             return
@@ -331,7 +336,7 @@ class StandViewCoordinator(QWidget):
                 if hillshade.size:
                     self._hillshade_image = axes.imshow(hillshade, cmap="Greys", alpha=0.5)
                 colorbar_label = "Clump Map (Clump bins)"
-                colorbar_ticks = [0, 1, 3, 7, 55]
+                colorbar_ticks = [0.0, 1.0, 3.0, 7.0, 55.0]
                 colorbar_ticklabels = ["0", "1", "2-4", "4-9", "10+"]
             else:
                 self._raster_image = axes.imshow(data, cmap="Greys")
@@ -536,6 +541,7 @@ class StandViewCoordinator(QWidget):
             )
             self.visualize_tab.raster_colorbar_axes.set_visible(True)
         else:
+            assert self._raster_colorbar is not None
             self._raster_colorbar.update_normal(self._raster_image)
             self._raster_colorbar.set_label(label)
             if ticks is not None:
@@ -616,7 +622,7 @@ class StandViewCoordinator(QWidget):
 
     @staticmethod
     def _configure_density_axes(
-        axes: object,
+        axes: Axes,
         xlabel: str,
         ylabel: str,
         title: str,
@@ -669,7 +675,7 @@ class StandViewCoordinator(QWidget):
         return float(np.sum(cut_ba) / area_ha)
 
     @staticmethod
-    def _draw_density(axes: object, values: np.ndarray) -> None:
+    def _draw_density(axes: Axes, values: np.ndarray) -> None:
         if values.size == 0:
             axes.text(0.5, 0.5, "No data available", ha="center", va="center", transform=axes.transAxes)
             return
@@ -684,7 +690,7 @@ class StandViewCoordinator(QWidget):
         axes.plot(x_values, density(x_values), color="#2f5d8a", linewidth=2)
 
     @staticmethod
-    def _sync_axis_limits(primary_axes: object, secondary_axes: object) -> None:
+    def _sync_axis_limits(primary_axes: Axes, secondary_axes: Axes) -> None:
         x_range = (
             min(primary_axes.get_xlim()[0], secondary_axes.get_xlim()[0]),
             max(primary_axes.get_xlim()[1], secondary_axes.get_xlim()[1]),
@@ -727,7 +733,7 @@ class StandViewCoordinator(QWidget):
     @staticmethod
     def _format_structure_summary(
         structure: StructureSummary | None,
-        unit_system: object,
+        unit_system: UnitSystem,
         empty_text: str = "-",
     ) -> str:
         if structure is None:

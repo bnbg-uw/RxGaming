@@ -163,7 +163,7 @@ class TestPersistence(unittest.TestCase):
             self.assertEqual("project-folder", loaded.form_state["auto_save_path"])
             self.assertTrue(loaded.form_state["auto_save_enabled"])
 
-    def test_snapshot_session_persistence_updates_session_file_without_rewriting_snapshot(self) -> None:
+    def test_snapshot_session_persistence_does_not_write_until_full_save(self) -> None:
         saved_snapshots: list[dict[str, object]] = []
 
         def fake_write_project_snapshot(
@@ -206,15 +206,20 @@ class TestPersistence(unittest.TestCase):
                 state = StandViewState(selected_unit_index=1, active_page=2, raster_mode=1, show_treatment=False)
 
                 session_persistence.initialize_snapshot(state)
-                session_persistence.save_session(state, "page_changed")
+                updated_state = StandViewState(selected_unit_index=4, active_page=1, raster_mode=3, show_treatment=True)
+                session_persistence.save_session(updated_state, "page_changed")
 
                 session_payload = json.loads((project_root / persistence.SESSION_FILE_NAME).read_text(encoding="utf-8"))
                 self.assertEqual(state.to_dict(), session_payload["session_state"])
                 self.assertEqual(1, len(saved_snapshots))
 
-                session_persistence.save_session(state, "targets_changed")
-                session_persistence.save_session(state, "show_treatment_toggled")
+                session_persistence.save_session(updated_state, "targets_changed")
+                session_persistence.save_session(updated_state, "show_treatment_toggled")
                 self.assertEqual(1, len(saved_snapshots))
+
+                session_persistence.save_full_project(updated_state)
+                self.assertEqual(2, len(saved_snapshots))
+                self.assertEqual(updated_state.to_dict(), saved_snapshots[1]["session_state"])
         finally:
             persistence.write_project_snapshot = original_write_project_snapshot
 
