@@ -175,7 +175,7 @@ namespace rxgaming {
                                     for (int k = 0; k < pts.nFeature(); k++) {
                                         auto xy = lidar->coordGetter()(pts.getFeature(k));
                                         if (unitE.contains(xy.x, xy.y)) {
-                                            if (thisMask.contains(xy.x, xy.y)) {
+                                            if (thisMask.atXY(xy.x, xy.y).has_value()) {
                                                 auto val = thisBasinMap.atXY(xy.x, xy.y);
                                                 if (!val.has_value()) {
                                                     continue;
