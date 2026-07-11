@@ -10,6 +10,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace {
     using rxgaming::ProjectSettings;
@@ -239,12 +240,25 @@ int main(int argc, char** argv) {
         outTable << "treated_ba"  << "," << "treated_mcs" << "," << "treated_tph" << "," << "treated_cc" << ",";
         outTable << "treatment_result"<< "\n";
         
+        std::unordered_map<std::string, int> featureIndexByName;
+        for (int featureIndex = 0; featureIndex < projectpoly.nFeature(); ++featureIndex) {
+            featureIndexByName.emplace(projectpoly.getStringField(featureIndex, settings.unitName), featureIndex);
+        }
+
         for (size_t i = 0; i < projectArea.rxUnits.size(); ++i) {
             std::cout << i << "\n";
-            auto name = projectpoly.getStringField(i, "name");
-            auto type = projectpoly.getStringField(i, "type");
-            auto target = projectpoly.getRealField(i, "target");
-            auto setting = projectpoly.getStringField(i, "DA_SETTING");
+            auto& unit = projectArea.rxUnits[i];
+            auto featureMatch = featureIndexByName.find(unit.name);
+            if (featureMatch == featureIndexByName.end()) {
+                std::cout << "Skipping unit with no matching polygon record: " << unit.name << "\n";
+                continue;
+            }
+
+            const int featureIndex = featureMatch->second;
+            auto name = projectpoly.getStringField(featureIndex, "name");
+            auto type = projectpoly.getStringField(featureIndex, "type");
+            auto target = projectpoly.getRealField(featureIndex, "target");
+            auto setting = projectpoly.getStringField(featureIndex, "DA_SETTING");
             std::cout << "Processing unit name=" << name
                 << ", type=" << type
                 << ", setting=" << setting
@@ -254,7 +268,6 @@ int main(int argc, char** argv) {
                 fs::create_directory(base / setting);
             }
 
-            auto& unit = projectArea.rxUnits[i];
             unit.dbhMin = 0;
             unit.dbhMax = 76.2;
 
@@ -273,8 +286,8 @@ int main(int argc, char** argv) {
                 optimizeCoverTreatment(unit, target, treater);
             }
 
-            unit.chm.writeRaster((base/setting/(setting+"_chm.tif")).string());
-            unit.getTreatChmRaster().writeRaster((base/setting/(setting+"_treated_chm.tif")).string());
+            unit.write_chm_raster((base/setting/(setting+"_chm.tif")).string(), false);
+            unit.write_chm_raster((base/setting/(setting+"_treated_chm.tif")).string(), true);
 
             unit.taos.writeShapefile(base/setting/(setting+"_taos.shp"));
             unit.treatedTaos.writeShapefile(base/setting/(setting+"_treated_taos.shp"));

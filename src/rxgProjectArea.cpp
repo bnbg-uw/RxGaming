@@ -135,6 +135,11 @@ namespace rxgaming {
                 rxtools::TaoList taos(mask.crs());
                 try {
                     if (mask.dataOverlapsMultiPolygon(unit.getGeometry())) {
+                        auto thisMask = mask;
+                        thisMask = lapis::cropRaster(thisMask, unit.getGeometry().boundingBox(), lapis::SnapType::out);
+                        thisMask.maskByMultiPolygon(unit.getGeometry());
+                        thisMask = lapis::trimRaster(thisMask);
+
                         for (int j = 0; j < lidar->nTiles(); j++) {
                             auto e = lidar->extentByTile(j);
                             if (e) {
@@ -170,7 +175,7 @@ namespace rxgaming {
                                     for (int k = 0; k < pts.nFeature(); k++) {
                                         auto xy = lidar->coordGetter()(pts.getFeature(k));
                                         if (unitE.contains(xy.x, xy.y)) {
-                                            if (unit.getGeometry().containsPoint(lapis::Point(xy, thisBasinMap.crs()))) {
+                                            if (thisMask.contains(xy.x, xy.y)) {
                                                 auto val = thisBasinMap.atXY(xy.x, xy.y);
                                                 if (!val.has_value()) {
                                                     continue;
@@ -221,11 +226,6 @@ namespace rxgaming {
                             return lapis::mosaicInside(toMerge);
                         };
                         auto outChm = mergeVectorDouble(chm);
-
-                        auto thisMask = mask;
-                        thisMask = lapis::cropRaster(thisMask, outBasin, lapis::SnapType::out);
-                        thisMask.maskByMultiPolygon(unit.getGeometry());
-                        thisMask = lapis::trimRaster(thisMask);
                         
                         auto tmp = outBasin;
                         for (lapis::cell_t cell = 0; cell < outBasin.ncell(); ++cell) {
